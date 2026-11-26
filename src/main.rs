@@ -16,6 +16,7 @@ mod pad;
 mod terrain;
 mod theme;
 mod ui;
+mod update;
 mod view;
 
 use bevy::camera::Viewport;
@@ -357,6 +358,12 @@ fn main() {
     // Steam sets SteamDeck=1 on the Deck: start fullscreen there.
     if std::env::var("SteamDeck").is_ok_and(|v| v == "1") {
         sim.save.settings.fullscreen = true;
+    }
+    update::clean_up();
+    // Look for a new release (not on screenshot runs unless testing it, or with FACET3D_NOUPDATE).
+    let shot = std::env::var_os("FACET3D_SHOT").is_some() && std::env::var_os("FACET3D_FAKE_VERSION").is_none();
+    if sim.save.settings.check_updates && !shot && std::env::var_os("FACET3D_NOUPDATE").is_none() {
+        update::start_check();
     }
     if let Some(k) = std::env::var("FACET3D_UISCALE").ok().and_then(|v| v.parse().ok()) {
         sim.save.settings.ui_scale = k;

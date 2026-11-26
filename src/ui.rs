@@ -788,6 +788,8 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
     if st.page.is_some() {
         return out;
     }
+    nav::group(ctx, Group::Title);
+    menus::update_banner(ctx, screen, clicked);
     ctx.input(|i| {
         let n = sim.maps.len();
         if i.key_pressed(egui::Key::ArrowLeft) {

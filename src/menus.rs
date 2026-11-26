@@ -147,6 +147,31 @@ pub fn settings(ctx: &egui::Context, area: Rect, s: &mut Settings, music: &mut b
                 let r = ui.checkbox(&mut s.floating_text, "");
                 nav::toggle(&r, &mut s.floating_text);
                 ui.end_row();
+                label(ui, "Check for updates");
+                ui.horizontal(|ui| {
+                    let r = ui.checkbox(&mut s.check_updates, "");
+                    nav::toggle(&r, &mut s.check_updates);
+                    use crate::update::State;
+                    let status = match crate::update::state() {
+                        State::Checking => "Checking…".to_string(),
+                        State::UpToDate => format!("Up to date (v{})", crate::update::current()),
+                        State::Offline => "Couldn't reach GitHub".to_string(),
+                        State::Available(r) => format!("{} available: see the title screen", r.version),
+                        State::Downloading { .. } => "Downloading…".to_string(),
+                        State::Ready(v) => format!("{v} installed: restart to use it"),
+                        State::Failed(_) => "Update failed".to_string(),
+                        State::Idle => String::new(),
+                    };
+                    if ui.button(RichText::new("Check now").size(13.0)).nav_clicked() {
+                        crate::update::start_check();
+                        ui.ctx().data_mut(|d| d.remove::<bool>(egui::Id::new("update_dismissed")));
+                        *clicked = true;
+                    }
+                    ui.label(RichText::new(status).size(13.0).color(DIM));
+                })
+                .response
+                .on_hover_text("Looks for a new version on GitHub when the game starts.");
+                ui.end_row();
                 label(ui, "Tips");
                 ui.horizontal(|ui| {
                     let r = ui.checkbox(&mut s.tips, "");
@@ -526,4 +551,131 @@ pub fn summary(ctx: &egui::Context, view: Rect, g: &Game, new_best: bool, t: f32
         });
     let _ = (GOOD, FontId::default());
     req
+}
+
+// ---------------------------------------------------------------------------------------------
+// Update banner (title screen)
+
+/// A small box in the title screen's corner when a new release exists, then its download
+/// progress and the "restart" prompt. Hidden while up to date, offline, or after "Not now".
+pub fn update_banner(ctx: &egui::Context, screen: Rect, clicked: &mut bool) {
+    use crate::update::{self, State};
+    let state = update::state();
+    let dismissed_id = egui::Id::new("update_dismissed");
+    let notes_id = egui::Id::new("update_notes");
+    let dismissed = ctx.data(|d| d.get_temp::<bool>(dismissed_id).unwrap_or(false));
+    let show = match &state {
+        State::Available(_) | State::Failed(_) => !dismissed,
+        State::Downloading { .. } | State::Ready(_) => true,
+        _ => false,
+    };
+    if !show {
+        return;
+    }
+    // Test hook: FACET3D_UPDATE=1 installs straight away.
+    if let State::Available(r) = &state
+        && r.installable()
+        && std::env::var_os("FACET3D_UPDATE").is_some()
+    {
+        update::start_install(r.clone());
+    }
+    let mut notes = ctx.data(|d| d.get_temp::<bool>(notes_id).unwrap_or(false));
+    let mut dismiss = false;
+    egui::Area::new("update_banner".into())
+        .order(egui::Order::Foreground)
+        .anchor(Align2::RIGHT_TOP, V2::new(-14.0, 14.0))
+        .constrain_to(screen)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(Color32::from_rgba_unmultiplied(14, 12, 10, 235))
+                .inner_margin(Margin::same(12))
+                .stroke(Stroke::new(1.2, alpha(GOLD, 0.7)))
+                .corner_radius(CornerRadius::same(4))
+                .show(ui, |ui| {
+                    // Short screens: keep it small so it stays clear of the map cards.
+                    let compact = screen.height() < 760.0;
+                    ui.set_width(if compact { 270.0 } else { 300.0 });
+                    match &state {
+                        State::Available(r) => {
+                            ui.label(RichText::new(format!("Facet {} is available", r.version)).family(heading()).size(17.0).color(GOLD));
+                            if !compact {
+                                ui.label(RichText::new(format!("You have v{}.", update::current())).size(13.0).color(DIM));
+                            }
+                            if notes && !r.notes.is_empty() {
+                                egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                                    nav::scroll(ui);
+                                    ui.label(RichText::new(&r.notes).size(13.0).color(TEXT));
+                                });
+                            }
+                            if !r.installable() && !compact {
+                                ui.label(RichText::new("Download it from the Releases page on GitHub.").size(13.5).color(TEXT));
+                            }
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if r.installable() {
+                                    if ui.button(RichText::new("Update").size(14.0).color(GOLD)).nav_clicked() {
+                                        update::start_install(r.clone());
+                                        *clicked = true;
+                                    }
+                                } else if !r.page.is_empty() && ui.button(RichText::new("Open page").size(14.0)).nav_clicked() {
+                                    ctx.open_url(egui::OpenUrl::new_tab(&r.page));
+                                    *clicked = true;
+                                }
+                                if !r.notes.is_empty() {
+                                    let label = if notes { "Hide notes" } else { "What's new" };
+                                    if ui.button(RichText::new(label).size(14.0)).nav_clicked() {
+                                        notes = !notes;
+                                        *clicked = true;
+                                    }
+                                }
+                                if ui.button(RichText::new("Not now").size(14.0)).nav_clicked() {
+                                    dismiss = true;
+                                    *clicked = true;
+                                }
+                            });
+                        }
+                        State::Downloading { version, got, total } => {
+                            ui.label(RichText::new(format!("Downloading Facet {version}…")).family(heading()).size(17.0).color(GOLD));
+                            let frac = if *total > 0 { *got as f32 / *total as f32 } else { 0.0 };
+                            ui.add(egui::ProgressBar::new(frac).text(format!("{:.0} / {:.0} MB", *got as f32 / 1048576.0, *total as f32 / 1048576.0)));
+                            if !compact {
+                                ui.label(RichText::new("You can keep playing while it downloads.").size(13.0).color(DIM));
+                            }
+                            ctx.request_repaint();
+                        }
+                        State::Ready(version) => {
+                            ui.label(RichText::new(format!("Facet {version} is installed")).family(heading()).size(17.0).color(GOOD));
+                            ui.label(RichText::new("Restart to play the new version (or it starts next time).").size(13.5).color(TEXT));
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new("Restart now").size(14.0).color(GOLD)).nav_clicked() {
+                                    update::restart();
+                                }
+                            });
+                        }
+                        State::Failed(e) => {
+                            ui.label(RichText::new("Update failed").family(heading()).size(17.0).color(BAD));
+                            ui.label(RichText::new(e).size(13.5).color(TEXT));
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new("Try again").size(14.0)).nav_clicked() {
+                                    update::start_check();
+                                    *clicked = true;
+                                }
+                                if ui.button(RichText::new("Close").size(14.0)).nav_clicked() {
+                                    dismiss = true;
+                                    *clicked = true;
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
+                });
+        });
+    ctx.data_mut(|d| {
+        d.insert_temp(notes_id, notes);
+        if dismiss {
+            d.insert_temp(dismissed_id, true);
+        }
+    });
 }

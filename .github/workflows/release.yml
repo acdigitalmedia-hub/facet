@@ -41,13 +41,12 @@ jobs:
       - name: Zip
         shell: pwsh
         run: |
-          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches.Groups[1].Value
-          $dir = "Facet-$version-windows"
-          New-Item -ItemType Directory -Path "dist/$dir" | Out-Null
-          Copy-Item target/release/facet.exe "dist/$dir/Facet.exe"
-          Copy-Item -Recurse assets "dist/$dir/assets"
-          Copy-Item README.md "dist/$dir/README.md"
-          Compress-Archive -Path "dist/$dir" -DestinationPath "dist/$dir.zip"
+          # Fixed names: the in-game updater looks for "-windows.zip" with a "Facet" folder inside.
+          New-Item -ItemType Directory -Path "dist/Facet" | Out-Null
+          Copy-Item target/release/facet.exe "dist/Facet/Facet.exe"
+          Copy-Item -Recurse assets "dist/Facet/assets"
+          Copy-Item README.md "dist/Facet/README.md"
+          Compress-Archive -Path "dist/Facet" -DestinationPath "dist/Facet-windows.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -62,6 +61,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The in-game updater checks every download against this.
+      - name: Checksums
+        run: cd dist && sha256sum Facet-* > SHA256SUMS && cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

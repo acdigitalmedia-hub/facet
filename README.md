@@ -7,12 +7,17 @@ Warcraft III / StarCraft II custom-map genre. Built in Rust with the Bevy engine
 
 Download a release from the GitHub **Releases** page:
 
-- **Linux:** `Facet-<version>-x86_64.AppImage` – make it executable
+- **Linux:** `Facet-x86_64.AppImage` – make it executable
   (`chmod +x Facet-*.AppImage`, or Properties → "Allow executing") and run it.
-- **Windows:** unzip `Facet-<version>-windows.zip` and run `Facet.exe` (keep the `assets`
+- **Windows:** unzip `Facet-windows.zip` and run `Facet.exe` (keep the `assets`
   folder next to it).
 
 - **Steam Deck:** see [Steam Deck](#steam-deck) below.
+
+**Updates:** the game checks GitHub for a new release when it starts. If there is one, the
+title screen offers to download and install it (the AppImage replaces itself; on Windows the
+files are swapped and the old ones cleaned up next start), then restart. Your saves are kept.
+Turn it off under Settings → Check for updates.
 
 Saves, settings and your own maps live in `~/.local/share/facet/` on Linux and
 `%APPDATA%\facet\` on Windows.
@@ -70,7 +75,7 @@ Needs Rust (stable) and, on Linux, the ALSA and udev development packages
     cargo run --release
 
 `scripts/install-desktop.sh` builds it and adds a "Facet" launcher to your app menu
-(`--remove` to take it out). `scripts/build-appimage.sh` builds `dist/Facet-<version>-x86_64.AppImage`.
+(`--remove` to take it out). `scripts/build-appimage.sh` builds `dist/Facet-x86_64.AppImage`.
 
 ### Layout
 
@@ -94,7 +99,8 @@ runs the rules tests and a headless bot through 6 games as a balance check
 Debug helpers (debug runs never write records): `FACET3D_MAP=n`, `FACET3D_PLAY=difficulty`
 (skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave),
 `FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder),
-`FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PADLOG=1` (print controller buttons), `FACET3D_PAD=1` (controller hints
+`FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PADLOG=1` (print controller buttons), `FACET3D_FAKE_VERSION=0.0.1` (pretend to be old, to test
+updating; `FACET3D_UPDATE=1` also installs without asking), `FACET3D_NOUPDATE=1` (skip the check), `FACET3D_UPDATE_API=url` (read the release JSON from elsewhere), `FACET3D_PAD=1` (controller hints
 without a controller), `FACET3D_NOUI=1` (hide the interface), `FACET3D_SHOT=out.png` (save a
 screenshot of the game window after `FACET3D_SHOT_AT` seconds, default 6, then quit).
 
@@ -115,8 +121,10 @@ Bump `version` in `Cargo.toml`, commit, then tag and push:
 
     git tag v0.1.0 && git push origin v0.1.0
 
-GitHub Actions builds the AppImage (on Ubuntu 22.04, so it runs on older distros too) and the
-Windows zip and attaches both to a new release. The workflow can also be run by hand from the
+Write the release notes in the GitHub release afterwards if you like: the game's update box
+shows them under "What's new". GitHub Actions builds the AppImage (on Ubuntu 22.04, so it runs on older distros too) and the
+Windows zip, plus a `SHA256SUMS` file the updater checks downloads against, and attaches them
+to a new release. The workflow can also be run by hand from the
 Actions tab to get test builds without a release.
 
 ## Credits

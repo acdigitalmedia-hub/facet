@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Builds dist/Facet-<version>-x86_64.AppImage.
+# Builds dist/Facet-x86_64.AppImage (no version in the name: the in-game updater replaces the
+# file in place, so launchers and Steam shortcuts keep pointing at it).
 # Usage: scripts/build-appimage.sh [--no-build]   (--no-build packages the existing release binary)
 # Needs appimagetool: set APPIMAGETOOL, put it on PATH, or it's downloaded once to target/tools.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
 ARCH=x86_64
 APPDIR="$ROOT/target/AppDir"
-OUT="$ROOT/dist/Facet-$VERSION-$ARCH.AppImage"
+OUT="$ROOT/dist/Facet-$ARCH.AppImage"
 
 [[ "${1:-}" == "--no-build" ]] || cargo build --release --locked
 

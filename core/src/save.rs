@@ -42,6 +42,8 @@ pub struct Settings {
     pub seen_tips: Vec<String>,
     /// Interface size (1.0 = 100%).
     pub ui_scale: f32,
+    /// Look for a new release at startup.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +58,7 @@ impl Default for Settings {
             tips: true,
             seen_tips: Vec::new(),
             ui_scale: 1.0,
+            check_updates: true,
         }
     }
 }
