@@ -11,6 +11,8 @@ mod editor;
 mod env;
 mod menus;
 mod mesh;
+mod nav;
+mod pad;
 mod terrain;
 mod theme;
 mod ui;
@@ -256,6 +258,38 @@ fn asset_dir() -> String {
         .unwrap_or_else(|| "assets".into())
 }
 
+/// Debug: hide the interface (`FACET3D_NOUI=1`).
+pub fn no_ui() -> bool {
+    static NO_UI: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NO_UI.get_or_init(|| std::env::var("FACET3D_NOUI").is_ok())
+}
+
+/// The starting window size: `FACET3D_SIZE=1280x800` (debug), else 1600x920.
+fn window_size() -> (u32, u32) {
+    std::env::var("FACET3D_SIZE")
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        })
+        .unwrap_or((1600, 920))
+}
+
+/// Debug: `FACET3D_SHOT=out.png` saves a screenshot of the game window after a few seconds
+/// (`FACET3D_SHOT_AT` seconds, default 6), then quits.
+fn debug_shot(mut commands: Commands, time: Res<Time>, mut state: Local<u8>, mut exit: MessageWriter<AppExit>) {
+    use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+    let Ok(path) = std::env::var("FACET3D_SHOT") else { return };
+    let at = std::env::var("FACET3D_SHOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(6.0);
+    let t = time.elapsed_secs();
+    if *state == 0 && t > at {
+        *state = 1;
+        commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
+    } else if *state == 1 && t > at + 2.0 {
+        exit.write(AppExit::Success);
+    }
+}
+
 /// Orbit camera state.
 #[derive(Resource, Default)]
 pub struct CamRig {
@@ -319,6 +353,14 @@ fn main() {
         test_map: None,
     };
     sim.demo();
+    // Steam sets SteamDeck=1 on the Deck: start fullscreen there.
+    if std::env::var("SteamDeck").is_ok_and(|v| v == "1") {
+        sim.save.settings.fullscreen = true;
+    }
+    if let Some(k) = std::env::var("FACET3D_UISCALE").ok().and_then(|v| v.parse().ok()) {
+        sim.save.settings.ui_scale = k;
+    }
+    let (map_w, map_h) = (sim.maps[map].w, sim.maps[map].h);
     if std::env::var("FACET3D_EDITOR").is_ok() {
         sim.open_editor();
     }
@@ -351,7 +393,7 @@ fn main() {
                         title: "Facet".into(),
                         // Wayland app id / X11 class: matches facet.desktop so the launcher icon shows.
                         name: Some("facet".into()),
-                        resolution: (1600, 920).into(),
+                        resolution: window_size().into(),
                         ..default()
                     }),
                     ..default()
@@ -364,6 +406,14 @@ fn main() {
         .insert_resource(bevy::transform::StaticTransformOptimizations::Disabled)
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<CamRig>()
+        .insert_resource({
+            let mut p = pad::Pad::default();
+            if std::env::var("FACET3D_PAD").is_ok() {
+                pad::force_active();
+                p.cursor = Some((map_w / 2, map_h / 2));
+            }
+            p
+        })
         .init_resource::<atmosphere::WeatherBounds>()
         .insert_resource({
             let mut st = UiState::default();
@@ -382,9 +432,10 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (keys, apply_settings, rebuild, drive, events, sync_scene, view::animate, creatures::corpses, atmosphere::update, atmosphere::light_shift, camera, viewport, hover, view::path_dots, draw_overlays, audio::flush).chain(),
+            (keys, pad::gamepad, apply_settings, rebuild, drive, events, sync_scene, view::animate, creatures::corpses, atmosphere::update, atmosphere::light_shift, camera, viewport, hover, view::path_dots, draw_overlays, audio::flush).chain(),
         )
         .add_systems(EguiPrimaryContextPass, ui::interface)
+        .add_systems(Last, debug_shot)
         .run();
 }
 
@@ -804,7 +855,8 @@ fn camera(
 fn viewport(sim: Res<Sim>, window: Query<&Window, With<PrimaryWindow>>, mut cam: Query<&mut Camera, With<Camera3d>>) {
     let (Ok(win), Ok(mut cam)) = (window.single(), cam.single_mut()) else { return };
     let (w, h) = (win.physical_width(), win.physical_height());
-    let panel = if sim.screen == Screen::Playing { (PANEL_W * win.scale_factor()) as u32 } else { 0 };
+    let ui_scale = sim.save.settings.ui_scale;
+    let panel = if sim.screen == Screen::Playing && !no_ui() { (PANEL_W * win.scale_factor() * ui_scale) as u32 } else { 0 };
     let vw = w.saturating_sub(panel).max(1);
     let size = UVec2::new(vw, h.max(1));
     if cam.viewport.as_ref().is_none_or(|v| v.physical_size != size) {
@@ -821,6 +873,7 @@ fn hover(
     mut sim: ResMut<Sim>,
     mut st: ResMut<UiState>,
     rig: Res<CamRig>,
+    pad: Res<pad::Pad>,
     mut audio: ResMut<Audio>,
 ) {
     st.hover = None;
@@ -845,20 +898,16 @@ fn hover(
         }
     }
 
+    // With a controller, the hovered cell is its cursor.
+    if pad::active() && pad::board_mode(&sim, &st) {
+        st.hover = pad.cursor.filter(|&c| sim.game.in_bounds(c));
+    }
+
     let g = &mut sim.game;
     if mouse.just_pressed(MouseButton::Left) && !over_ui {
-        if let Some(c) = st.hover {
-            let i = g.idx(c);
-            match (&g.grid[i], g.phase) {
-                (Occ::Empty, Phase::Build) => g.place(c),
-                (Occ::Tower(_) | Occ::Rock, _) => {
-                    g.selected = Some(i);
-                    audio.click();
-                }
-                _ => g.selected = None,
-            }
-        } else {
-            g.selected = None;
+        match st.hover {
+            Some(c) => click_cell(g, c, &mut audio),
+            None => g.selected = None,
         }
     }
     // A right click (not a drag) clears the selection.
@@ -877,6 +926,19 @@ fn hover(
         },
         _ => None,
     };
+}
+
+/// A click (or controller press) on a board cell: place a gem, or select a tower or rock.
+pub fn click_cell(g: &mut Game, c: (i32, i32), audio: &mut Audio) {
+    let i = g.idx(c);
+    match (&g.grid[i], g.phase) {
+        (Occ::Empty, Phase::Build) => g.place(c),
+        (Occ::Tower(_) | Occ::Rock, _) => {
+            g.selected = Some(i);
+            audio.click();
+        }
+        _ => g.selected = None,
+    }
 }
 
 fn draw_overlays(sim: Res<Sim>, st: Res<UiState>, mut gizmos: Gizmos) {

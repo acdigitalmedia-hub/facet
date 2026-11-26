@@ -1312,9 +1312,24 @@ pub fn overlays(sim: &Sim, st: &crate::ui::UiState, gizmos: &mut Gizmos) {
                 _ => col = Color::srgba(1.0, 0.25, 0.2, 1.0),
             }
         }
-        let pts = [Vec3::new(x, y, z), Vec3::new(x + 1.0, y, z), Vec3::new(x + 1.0, y, z + 1.0), Vec3::new(x, y, z + 1.0)];
-        for k in 0..4 {
-            gizmos.line(pts[k], pts[(k + 1) % 4], col);
+        let square = |gizmos: &mut Gizmos, inset: f32, h: f32, col: Color| {
+            let (a, b) = (inset, 1.0 - inset);
+            let pts = [Vec3::new(x + a, y + h, z + a), Vec3::new(x + b, y + h, z + a), Vec3::new(x + b, y + h, z + b), Vec3::new(x + a, y + h, z + b)];
+            for k in 0..4 {
+                gizmos.line(pts[k], pts[(k + 1) % 4], col);
+            }
+        };
+        square(gizmos, 0.0, 0.0, col);
+        // The controller cursor is bolder: a doubled outline and corner posts, so it's easy to
+        // find on a small screen.
+        if crate::pad::active() {
+            square(gizmos, -0.06, 0.0, col);
+            square(gizmos, 0.06, 0.0, col.with_alpha(0.6));
+            let post = 0.35 + 0.15 * pulse;
+            for (cx, cz) in [(x, z), (x + 1.0, z), (x + 1.0, z + 1.0), (x, z + 1.0)] {
+                gizmos.line(Vec3::new(cx, y, cz), Vec3::new(cx, y + post, cz), col);
+            }
+            square(gizmos, 0.0, post, col.with_alpha(0.35));
         }
         if let Some(tw) = g.tower(g.idx(c)) {
             gizmos.circle(Isometry3d::new(at(c, 0.12), up_rot), g.stats(tw).range, Color::srgba(1.0, 1.0, 1.0, 0.3));

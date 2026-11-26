@@ -5,6 +5,8 @@ use bevy_egui::egui::{self, Align2, Color32, CornerRadius, FontId, Margin, Pos2,
 use facet_core::game::{Game, Kind, Occ, Phase};
 use facet_core::save::{Quality, Settings};
 
+use crate::nav::{self, Group, NavExt};
+use crate::pad::{self, hint};
 use crate::ui::{alpha, bold, c32, diff_color, effects_text, heading, lerp32, small, tower_icon, BAD, DIM, GOLD, GOOD, INFO, RECIPE, TEXT};
 
 /// Which menu page is open.
@@ -37,7 +39,7 @@ fn dim_behind(ctx: &egui::Context, area: Rect, id: &'static str) {
 
 fn big_button(ui: &mut egui::Ui, label: &str, w: f32, clicked: &mut bool) -> bool {
     let b = egui::Button::new(RichText::new(label).family(heading()).size(19.0)).min_size(V2::new(w, 38.0));
-    let r = ui.add(b).clicked();
+    let r = ui.add(b).nav_clicked();
     if r {
         *clicked = true;
     }
@@ -46,6 +48,7 @@ fn big_button(ui: &mut egui::Ui, label: &str, w: f32, clicked: &mut bool) -> boo
 
 /// The pause menu. Returns a request when a button asks for one.
 pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, clicked: &mut bool) -> Option<Request> {
+    nav::group(ctx, Group::Modal);
     dim_behind(ctx, view, "pause_dim");
     let mut req = None;
     egui::Area::new("pause".into()).order(egui::Order::Foreground).pivot(Align2::CENTER_CENTER).fixed_pos(view.center()).show(ctx, |ui| {
@@ -71,7 +74,7 @@ pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, clicked: 
                     req = Some(Request::Quit);
                 }
                 ui.add_space(6.0);
-                small(ui, "Esc to resume", DIM);
+                small(ui, if pad::active() { "B to resume" } else { "Esc to resume" }, DIM);
             });
         });
     });
@@ -80,6 +83,7 @@ pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, clicked: 
 
 /// The settings page. Returns true when the player closes it.
 pub fn settings(ctx: &egui::Context, area: Rect, s: &mut Settings, music: &mut bool, sfx: &mut bool, clicked: &mut bool) -> bool {
+    nav::group(ctx, Group::Modal);
     dim_behind(ctx, area, "settings_dim");
     let mut close = false;
     egui::Area::new("settings".into()).order(egui::Order::Foreground).pivot(Align2::CENTER_CENTER).fixed_pos(area.center()).show(ctx, |ui| {
@@ -93,23 +97,28 @@ pub fn settings(ctx: &egui::Context, area: Rect, s: &mut Settings, music: &mut b
             egui::Grid::new("settings_grid").num_columns(2).spacing(V2::new(12.0, 10.0)).show(ui, |ui| {
                 label(ui, "Music");
                 ui.horizontal(|ui| {
-                    ui.checkbox(music, "");
-                    ui.add_enabled(*music, egui::Slider::new(&mut s.music_volume, 0.0..=1.0).show_value(false));
+                    let r = ui.checkbox(music, "");
+                    nav::toggle(&r, music);
+                    let r = ui.add_enabled(*music, egui::Slider::new(&mut s.music_volume, 0.0..=1.0).show_value(false));
+                    nav::slider(&r, &mut s.music_volume);
                 });
                 ui.end_row();
                 label(ui, "Sound effects");
                 ui.horizontal(|ui| {
-                    ui.checkbox(sfx, "");
-                    ui.add_enabled(*sfx, egui::Slider::new(&mut s.sfx_volume, 0.0..=1.0).show_value(false));
+                    let r = ui.checkbox(sfx, "");
+                    nav::toggle(&r, sfx);
+                    let r = ui.add_enabled(*sfx, egui::Slider::new(&mut s.sfx_volume, 0.0..=1.0).show_value(false));
+                    nav::slider(&r, &mut s.sfx_volume);
                 });
                 ui.end_row();
-                label(ui, "Fullscreen  [F11]");
-                ui.checkbox(&mut s.fullscreen, "");
+                label(ui, if pad::active() { "Fullscreen" } else { "Fullscreen  [F11]" });
+                let r = ui.checkbox(&mut s.fullscreen, "");
+                nav::toggle(&r, &mut s.fullscreen);
                 ui.end_row();
                 label(ui, "Graphics");
                 ui.horizontal(|ui| {
                     for (q, name) in [(Quality::Low, "Low"), (Quality::Medium, "Medium"), (Quality::High, "High")] {
-                        if ui.selectable_label(s.quality == q, RichText::new(name).size(15.0)).clicked() {
+                        if ui.selectable_label(s.quality == q, RichText::new(name).size(15.0)).nav_clicked() {
                             s.quality = q;
                             *clicked = true;
                         }
@@ -118,16 +127,31 @@ pub fn settings(ctx: &egui::Context, area: Rect, s: &mut Settings, music: &mut b
                 .response
                 .on_hover_text("Low: no shadows or glow. Medium: no anti-aliasing. High: everything.");
                 ui.end_row();
+                label(ui, "Interface size");
+                ui.horizontal(|ui| {
+                    for (k, name) in [(1.0, "100%"), (1.15, "115%"), (1.3, "130%")] {
+                        if ui.selectable_label((s.ui_scale - k).abs() < 0.01, RichText::new(name).size(15.0)).nav_clicked() {
+                            s.ui_scale = k;
+                            *clicked = true;
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("Bigger text and buttons, e.g. for a handheld screen.");
+                ui.end_row();
                 label(ui, "Health bars");
-                ui.checkbox(&mut s.health_bars, "");
+                let r = ui.checkbox(&mut s.health_bars, "");
+                nav::toggle(&r, &mut s.health_bars);
                 ui.end_row();
                 label(ui, "Floating gold / crits");
-                ui.checkbox(&mut s.floating_text, "");
+                let r = ui.checkbox(&mut s.floating_text, "");
+                nav::toggle(&r, &mut s.floating_text);
                 ui.end_row();
                 label(ui, "Tips");
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut s.tips, "");
-                    if ui.button(RichText::new("Show all tips again").size(13.0)).clicked() {
+                    let r = ui.checkbox(&mut s.tips, "");
+                    nav::toggle(&r, &mut s.tips);
+                    if ui.button(RichText::new("Show all tips again").size(13.0)).nav_clicked() {
                         s.seen_tips.clear();
                         s.tips = true;
                         *clicked = true;
@@ -195,10 +219,15 @@ const HELP: &[(&str, &str)] = &[
         "Controls",
         "Click to place or select. K keep, C combine, U gem quality, X remove rock, L upgrade special, B recipe book. 1/2/3 game speed, Space pause, Esc menu. Camera: WASD/arrows pan, Q/E or right-drag rotate, scroll zoom, middle-drag pan, Home reset view, V top-down. M/N music/sound, F11 fullscreen.",
     ),
+    (
+        "Controller",
+        "Left stick moves the cursor. A places or selects, B deselects (or dismisses a tip). X keeps a new gem, removes a selected rock or upgrades a selected special. Y forges when a recipe is ready, otherwise combines. LB/RB jump between towers (the new gems while choosing). D-pad: up gem quality, down top-down view, left/right game speed. Right stick turns the camera, LT/RT zoom, L3 resets the view, R3 pauses. Start opens the menu, Select the recipe book. In menus, move with the stick or D-pad, A to choose, B to go back.",
+    ),
 ];
 
 /// The how-to-play page. Returns true when closed.
 pub fn help(ctx: &egui::Context, area: Rect, clicked: &mut bool) -> bool {
+    nav::group(ctx, Group::Modal);
     dim_behind(ctx, area, "help_dim");
     let mut close = false;
     egui::Area::new("help".into()).order(egui::Order::Foreground).pivot(Align2::CENTER_CENTER).fixed_pos(area.center()).show(ctx, |ui| {
@@ -207,6 +236,7 @@ pub fn help(ctx: &egui::Context, area: Rect, clicked: &mut bool) -> bool {
             ui.label(RichText::new("How to Play").family(heading()).size(30.0).color(GOLD));
             ui.add_space(4.0);
             egui::ScrollArea::vertical().max_height((area.height() - 220.0).max(200.0)).show(ui, |ui| {
+                nav::scroll(ui);
                 for (title, body) in HELP {
                     ui.add_space(6.0);
                     ui.label(RichText::new(*title).family(heading()).size(18.0).color(lerp32(GOLD, TEXT, 0.3)));
@@ -226,6 +256,7 @@ pub fn help(ctx: &egui::Context, area: Rect, clicked: &mut bool) -> bool {
 
 /// The rock-removal confirmation. Returns Some(true) to remove, Some(false) to cancel.
 pub fn confirm_rock(ctx: &egui::Context, view: Rect, cost: u32, can: bool, clicked: &mut bool) -> Option<bool> {
+    nav::group(ctx, Group::Modal);
     let mut out = None;
     egui::Area::new("confirm_rock".into())
         .order(egui::Order::Foreground)
@@ -241,13 +272,13 @@ pub fn confirm_rock(ctx: &egui::Context, view: Rect, cost: u32, can: bool, click
                     }
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        let yes = egui::Button::new(RichText::new("Remove  [Enter]").size(15.0)).min_size(V2::new(140.0, 30.0));
-                        if ui.add_enabled(can, yes).clicked() {
+                        let yes = egui::Button::new(RichText::new(format!("Remove  {}", hint("Enter", "A"))).size(15.0)).min_size(V2::new(140.0, 30.0));
+                        if ui.add_enabled(can, yes).nav_clicked() {
                             out = Some(true);
                             *clicked = true;
                         }
-                        let no = egui::Button::new(RichText::new("Cancel  [Esc]").size(15.0)).min_size(V2::new(140.0, 30.0));
-                        if ui.add(no).clicked() {
+                        let no = egui::Button::new(RichText::new(format!("Cancel  {}", hint("Esc", "B"))).size(15.0)).min_size(V2::new(140.0, 30.0));
+                        if ui.add(no).nav_clicked() {
                             out = Some(false);
                             *clicked = true;
                         }
@@ -316,11 +347,17 @@ const TIPS: &[Tip] = &[
 ];
 
 /// Shows the first relevant tip the player hasn't dismissed. Returns true if settings changed.
-pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, clicked: &mut bool) -> bool {
+/// `dismiss` (B on a controller) acts like "Got it".
+pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, dismiss: bool, clicked: &mut bool) -> bool {
     if !s.tips || matches!(g.phase, Phase::GameOver | Phase::Victory) {
         return false;
     }
     let Some(tip) = TIPS.iter().find(|t| !s.seen_tips.iter().any(|x| x == t.id) && (t.when)(g)) else { return false };
+    nav::group(ctx, Group::None);
+    if dismiss {
+        s.seen_tips.push(tip.id.to_string());
+        return true;
+    }
     let mut changed = false;
     egui::Area::new("tip".into()).order(egui::Order::Foreground).fixed_pos(view.min + V2::new(16.0, 16.0)).show(ctx, |ui| {
         egui::Frame::new()
@@ -334,12 +371,13 @@ pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, clicked
                 ui.label(RichText::new(tip.text).size(14.5).color(TEXT));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.button(RichText::new("Got it").size(14.0)).clicked() {
+                    let got = if pad::active() { "Got it  (B)" } else { "Got it" };
+                    if ui.button(RichText::new(got).size(14.0)).nav_clicked() {
                         s.seen_tips.push(tip.id.to_string());
                         changed = true;
                         *clicked = true;
                     }
-                    if ui.button(RichText::new("Hide all tips").size(13.0)).clicked() {
+                    if ui.button(RichText::new("Hide all tips").size(13.0)).nav_clicked() {
                         s.tips = false;
                         changed = true;
                         *clicked = true;
@@ -354,8 +392,7 @@ pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, clicked
 // Board tooltip
 
 /// A small info box next to the cursor for the tower or rock under it.
-pub fn board_tooltip(ctx: &egui::Context, g: &Game, cell: (i32, i32)) {
-    let Some(pos) = ctx.pointer_hover_pos() else { return };
+pub fn board_tooltip(ctx: &egui::Context, g: &Game, cell: (i32, i32), pos: Pos2) {
     let i = g.idx(cell);
     let mut lines: Vec<(String, Color32, bool)> = Vec::new();
     match &g.grid[i] {
@@ -405,6 +442,7 @@ pub fn board_tooltip(ctx: &egui::Context, g: &Game, cell: (i32, i32)) {
 
 /// The victory / defeat summary with the run's best towers. Returns a request from its buttons.
 pub fn summary(ctx: &egui::Context, view: Rect, g: &Game, new_best: bool, t: f32, clicked: &mut bool) -> Option<Request> {
+    nav::group(ctx, Group::Modal);
     dim_behind(ctx, view, "summary_dim");
     let mut req = None;
     let won = g.phase == Phase::Victory;
@@ -467,19 +505,20 @@ pub fn summary(ctx: &egui::Context, view: Rect, g: &Game, new_best: bool, t: f32
                     let w = (456.0 - (n - 1.0) * 8.0) / n;
                     let mut btn = |ui: &mut egui::Ui, label: &str| {
                         let b = egui::Button::new(RichText::new(label).family(heading()).size(16.0)).min_size(V2::new(w, 36.0));
-                        let r = ui.add(b).clicked();
+                        let r = ui.add(b).nav_clicked();
                         if r {
                             *clicked = true;
                         }
                         r
                     };
-                    if won && btn(ui, "Endless  [E]") {
+                    let (endless, title) = if pad::active() { ("Endless", "Title") } else { ("Endless  [E]", "Title  [R]") };
+                    if won && btn(ui, endless) {
                         req = Some(Request::Endless);
                     }
                     if btn(ui, "Play Again") {
                         req = Some(Request::Restart);
                     }
-                    if btn(ui, "Title  [R]") {
+                    if btn(ui, title) {
                         req = Some(Request::Quit);
                     }
                 });

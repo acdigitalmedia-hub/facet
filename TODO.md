@@ -37,6 +37,15 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Automatic releases: GitHub Actions on `v*` tags (`.github/workflows/release.yml`)
 - [ ] First CI run checked, first release (v0.1.0) tagged
 
+## 6. Steam Deck & controller  ✓ (awaiting Deck playtest)
+- [x] Controller support: board cursor, face-button actions, camera on right stick/triggers (`src/pad.rs`)
+- [x] Menus navigable by controller (focus highlight, A/B, sliders, scrolling) (`src/nav.rs`)
+- [x] Controller button hints that switch with the last input device; Controller section in How to Play
+- [x] Small screens: Interface size setting (100/115/130%), compact title layout, scrolling side panel
+- [x] Fullscreen by default on the Deck; Steam library artwork (`packaging/steam/`); Deck guide in README
+- [ ] Playtest on the Deck (Game Mode, non-Steam game) and with a controller on the PC
+- [ ] Map editor stays mouse/touch only (by choice)
+
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
 - [x] Maps + art pass (5 maps)

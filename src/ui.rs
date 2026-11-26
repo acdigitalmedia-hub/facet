@@ -16,6 +16,8 @@ use facet_core::path::{full_route, Cell};
 
 use crate::audio::Audio;
 use crate::menus::{self, Page, Request};
+use crate::nav::{self, Group, NavExt};
+use crate::pad::{self, hint, Pad};
 use crate::{Screen, Sim};
 
 pub const PANEL_W: f32 = 350.0;
@@ -255,7 +257,7 @@ fn button_tip(ui: &mut egui::Ui, label: &str, enabled: bool, tint: Color32, clic
     if !tip.is_empty() {
         resp = resp.on_hover_text(tip).on_disabled_hover_text(tip);
     }
-    let r = resp.clicked();
+    let r = resp.nav_clicked();
     if r {
         *clicked = true;
     }
@@ -417,6 +419,7 @@ pub fn interface(
     mut sim: ResMut<Sim>,
     mut st: ResMut<UiState>,
     mut audio: ResMut<Audio>,
+    mut pad: ResMut<Pad>,
     time: Res<Time>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) -> Result {
@@ -427,6 +430,16 @@ pub fn interface(
         // New fonts take effect next frame.
         return Ok(());
     }
+    // Debug: FACET3D_NOUI=1 hides the interface (clean scene shots, e.g. store artwork).
+    if crate::no_ui() {
+        return Ok(());
+    }
+    let zoom = sim.save.settings.ui_scale.clamp(0.75, 2.0);
+    if (ctx.zoom_factor() - zoom).abs() > 0.001 {
+        ctx.set_zoom_factor(zoom);
+    }
+    nav::begin(ctx, std::mem::take(&mut pad.nav), pad::active() && sim.screen != Screen::Editor);
+    let dismiss_tip = std::mem::take(&mut pad.dismiss_tip);
     let t = time.elapsed_secs();
     let mut clicked = false;
     let screen = ctx.content_rect();
@@ -476,13 +489,24 @@ pub fn interface(
             let mut req = None;
             if st.page.is_none() && st.confirm_rock.is_none() && !st.book {
                 let Sim { game, save, .. } = &mut *sim;
-                if !ended && menus::tips(ctx, view, game, &mut save.settings, &mut clicked) {
+                if !ended && menus::tips(ctx, view, game, &mut save.settings, dismiss_tip, &mut clicked) {
                     save.store();
                 }
                 if let Some(c) = st.hover
-                    && !st.pointer_over_ui
+                    && (!st.pointer_over_ui || pad::active())
                 {
-                    menus::board_tooltip(ctx, &sim.game, c);
+                    // Next to the mouse, or next to the controller cursor's cell.
+                    let at = if pad::active() {
+                        cams.single().ok().and_then(|(cam, ct)| {
+                            let p = bevy::math::Vec3::new(c.0 as f32 + 0.5, sim.scene.ground(c.0 as f32 + 0.5, c.1 as f32 + 0.5), c.1 as f32 + 0.5);
+                            cam.world_to_viewport(ct, p).ok().map(|v| Pos2::new(v.x, v.y) / zoom)
+                        })
+                    } else {
+                        ctx.pointer_hover_pos()
+                    };
+                    if let Some(at) = at {
+                        menus::board_tooltip(ctx, &sim.game, c, at);
+                    }
                 }
                 if ended {
                     req = menus::summary(ctx, view, &sim.game, st.new_best, t, &mut clicked);
@@ -563,6 +587,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
     if st.title_routes.len() != sim.maps.len() {
         st.title_routes = sim.maps.iter().map(|m| full_route(m.w, m.h, &m.waypoints, &|x, y| m.is_wall(x, y)).unwrap_or_default()).collect();
     }
+    nav::group(ctx, Group::Title);
     let cx = screen.center().x;
     let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, "title_bg".into()));
     // Darken the scene a little so text reads, more at the top and bottom.
@@ -572,10 +597,14 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         ui.set_width(screen.width());
         ui.set_height(screen.height());
         let p = ui.painter().clone();
-        let ty = screen.min.y + screen.height() * 0.11;
-        p.text(Pos2::new(cx + 3.0, ty + 4.0), Align2::CENTER_CENTER, "FACET", FontId::new(88.0, heading()), alpha(Color32::BLACK, 0.6));
-        p.text(Pos2::new(cx, ty), Align2::CENTER_CENTER, "FACET", FontId::new(88.0, heading()), GOLD);
-        p.text(Pos2::new(cx, ty + 62.0), Align2::CENTER_CENTER, "a gem maze defense", FontId::new(20.0, heading()), TEXT);
+        // Short screens (handhelds, large interface sizes) get a tighter layout.
+        let compact = screen.height() < 760.0;
+        let pick = |normal: f32, small: f32| if compact { small } else { normal };
+        let ty = screen.min.y + screen.height() * pick(0.11, 0.075);
+        let big = pick(88.0, 62.0);
+        p.text(Pos2::new(cx + 3.0, ty + 4.0), Align2::CENTER_CENTER, "FACET", FontId::new(big, heading()), alpha(Color32::BLACK, 0.6));
+        p.text(Pos2::new(cx, ty), Align2::CENTER_CENTER, "FACET", FontId::new(big, heading()), GOLD);
+        p.text(Pos2::new(cx, ty + pick(62.0, 44.0)), Align2::CENTER_CENTER, "a gem maze defense", FontId::new(pick(20.0, 17.0), heading()), TEXT);
 
         // Map cards.
         // Show as many cards as fit (at least ~150 px each), scrolling to keep the selection visible.
@@ -584,10 +613,10 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         let shown = count.min(fit);
         let first = sim.map.saturating_sub(shown / 2).min(count - shown);
         let n = shown as f32;
-        let card_w = 196.0f32.min((screen.width() - 120.0) / n - 14.0);
+        let card_w = pick(196.0, 140.0).min((screen.width() - 120.0) / n - 14.0);
         let card_h = card_w * 0.8 + 34.0;
         let total = n * card_w + (n - 1.0) * 14.0;
-        let my = ty + 110.0;
+        let my = ty + pick(110.0, 76.0);
         if first > 0 {
             p.text(Pos2::new(cx - total / 2.0 - 22.0, my + card_h / 2.0), Align2::CENTER_CENTER, "‹", FontId::new(40.0, heading()), GOLD);
         }
@@ -605,20 +634,22 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
             let border = if sel { GOLD } else if resp.hovered() { alpha(GOLD, 0.6) } else { alpha(GOLD, 0.2) };
             p.rect_stroke(r, CornerRadius::same(4), Stroke::new(if sel { 2.5 } else { 1.2 }, border), StrokeKind::Inside);
             p.text(Pos2::new(r.center().x, r.max.y - 18.0), Align2::CENTER_CENTER, &sim.maps[k].name, FontId::new(16.0, heading()), if sel { GOLD } else { TEXT });
-            if resp.clicked() && !sel {
+            if resp.nav_clicked() && !sel {
                 out.select_map = Some(k);
                 *clicked = true;
             }
         }
         let m = &sim.maps[sim.map];
-        p.text(Pos2::new(cx, my + card_h + 22.0), Align2::CENTER_CENTER, &m.desc, FontId::proportional(16.0), TEXT);
-        p.text(Pos2::new(cx, my + card_h + 44.0), Align2::CENTER_CENTER, "Click a map or use the Left/Right keys to choose", FontId::proportional(13.0), DIM);
+        p.text(Pos2::new(cx, my + card_h + pick(22.0, 18.0)), Align2::CENTER_CENTER, &m.desc, FontId::proportional(16.0), TEXT);
+        if !compact {
+            p.text(Pos2::new(cx, my + card_h + 44.0), Align2::CENTER_CENTER, if pad::active() { "LB / RB to change the map, then choose a difficulty" } else { "Click a map or use the Left/Right keys to choose" }, FontId::proportional(13.0), DIM);
+        }
 
         // Difficulty cards.
         let diffs = &sim.bal.difficulties;
         let nd = diffs.len() as f32;
         let dw = 300.0f32.min((screen.width() - 80.0) / nd - 18.0);
-        let dh = 150.0;
+        let dh = pick(150.0, 136.0);
         let dtotal = nd * dw + (nd - 1.0) * 18.0;
         // Mutators: optional rules for the next game (records are kept separately).
         {
@@ -629,7 +660,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
             let label_w = 90.0;
             let total: f32 = label_w + chips.iter().map(|c| c.1 + 8.0).sum::<f32>();
             let mut x = cx - total / 2.0;
-            let y = my + card_h + 62.0;
+            let y = my + card_h + pick(62.0, 34.0);
             p.text(Pos2::new(x, y + 12.0), Align2::LEFT_CENTER, "Mutators", FontId::new(15.0, heading()), GOLD);
             x += label_w;
             for (m, w) in chips {
@@ -638,7 +669,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
                 let b = egui::Button::new(RichText::new(m.name()).size(14.0).color(if on { Color32::BLACK } else { TEXT }))
                     .fill(if on { GOLD } else { Color32::from_rgba_unmultiplied(20, 18, 16, 220) })
                     .corner_radius(CornerRadius::same(12));
-                if ui.put(r, b).on_hover_text(m.desc()).clicked() {
+                if ui.put(r, b).on_hover_text(m.desc()).nav_clicked() {
                     if on {
                         sim.mutators.retain(|x| *x != m);
                     } else {
@@ -649,7 +680,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
                 x += w + 8.0;
             }
         }
-        let dy = my + card_h + 104.0;
+        let dy = my + card_h + pick(104.0, 68.0);
         let wave_count = sim.bal.wave_count();
         for (k, d) in diffs.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(cx - dtotal / 2.0 + k as f32 * (dw + 18.0), dy), V2::new(dw, dh));
@@ -659,7 +690,9 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
             p.rect_filled(r, CornerRadius::same(4), if hov { Color32::from_rgba_unmultiplied(38, 34, 30, 240) } else { Color32::from_rgba_unmultiplied(16, 14, 12, 230) });
             p.rect_stroke(r, CornerRadius::same(4), Stroke::new(if hov { 2.2 } else { 1.2 }, alpha(tint, if hov { 1.0 } else { 0.5 })), StrokeKind::Inside);
             p.text(r.min + V2::new(14.0, 14.0), Align2::LEFT_TOP, &d.name, FontId::new(22.0, heading()), tint);
-            p.text(Pos2::new(r.max.x - 14.0, r.min.y + 18.0), Align2::RIGHT_TOP, format!("[{}]", k + 1), FontId::proportional(14.0), DIM);
+            if !pad::active() {
+                p.text(Pos2::new(r.max.x - 14.0, r.min.y + 18.0), Align2::RIGHT_TOP, format!("[{}]", k + 1), FontId::proportional(14.0), DIM);
+            }
             let galley = ctx.fonts_mut(|f| f.layout(d.desc.clone(), FontId::proportional(14.0), TEXT, dw - 28.0));
             let gh = galley.size().y;
             p.galley(r.min + V2::new(14.0, 46.0), galley, TEXT);
@@ -678,8 +711,10 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
                 }
                 b
             };
-            p.text(Pos2::new(r.min.x + 14.0, r.max.y - 12.0), Align2::LEFT_BOTTOM, best, FontId::proportional(13.0), if rec.wins > 0 { GOLD } else { DIM });
-            if resp.clicked() {
+            // Compact cards put the record right under the lives line so long descriptions fit.
+            let best_at = if compact { Pos2::new(r.min.x + 14.0, r.min.y + 72.0 + gh) } else { Pos2::new(r.min.x + 14.0, r.max.y - 12.0) };
+            p.text(best_at, if compact { Align2::LEFT_TOP } else { Align2::LEFT_BOTTOM }, best, FontId::proportional(13.0), if rec.wins > 0 { GOLD } else { DIM });
+            if resp.nav_clicked() {
                 out.start = Some((sim.map, k));
                 *clicked = true;
             }
@@ -688,13 +723,13 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         {
             let d = crate::Daily::today(&sim.maps, sim.bal.difficulties.len());
             let w = 3.0 * 300.0f32.min((screen.width() - 80.0) / 3.0 - 18.0) + 36.0;
-            let r = Rect::from_min_size(Pos2::new(cx - w / 2.0, dy + dh + 16.0), V2::new(w, 64.0));
+            let r = Rect::from_min_size(Pos2::new(cx - w / 2.0, dy + dh + pick(16.0, 8.0)), V2::new(w, pick(64.0, 56.0)));
             p.rect_filled(r, CornerRadius::same(4), Color32::from_rgba_unmultiplied(16, 14, 12, 230));
             p.rect_stroke(r, CornerRadius::same(4), Stroke::new(1.2, alpha(INFO, 0.6)), StrokeKind::Inside);
             p.text(r.min + V2::new(14.0, 10.0), Align2::LEFT_TOP, "Daily Challenge", FontId::new(20.0, heading()), INFO);
             let muts: Vec<&str> = d.mutators.iter().map(|m| m.name()).collect();
             let info = format!("{}  ·  {}  ·  {}  ·  {}", d.date, sim.maps[d.map].name, sim.bal.difficulties[d.diff].name, muts.join(" + "));
-            p.text(r.min + V2::new(14.0, 38.0), Align2::LEFT_TOP, info, FontId::proportional(14.0), TEXT);
+            p.text(r.min + V2::new(14.0, pick(38.0, 33.0)), Align2::LEFT_TOP, info, FontId::proportional(14.0), TEXT);
             let rec = sim.save.record(&d.key());
             let best = if rec.runs == 0 {
                 "Same gems for everyone today".to_string()
@@ -704,9 +739,9 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
                 format!("Best today: wave {}", rec.best_cleared + 1)
             };
             p.text(Pos2::new(r.max.x - 150.0, r.min.y + 14.0), Align2::RIGHT_TOP, best, FontId::proportional(13.0), if rec.wins > 0 { GOLD } else { DIM });
-            let br = Rect::from_min_size(Pos2::new(r.max.x - 130.0, r.min.y + 14.0), V2::new(116.0, 36.0));
+            let br = Rect::from_min_size(Pos2::new(r.max.x - 130.0, r.min.y + pick(14.0, 10.0)), V2::new(116.0, 36.0));
             let b = egui::Button::new(RichText::new("Play Daily").family(heading()).size(16.0));
-            if ui.put(br, b).on_hover_text("Today's map, difficulty and mutators, with the same gem rolls for every player.").clicked() {
+            if ui.put(br, b).on_hover_text("Today's map, difficulty and mutators, with the same gem rolls for every player.").nav_clicked() {
                 out.daily = true;
                 *clicked = true;
             }
@@ -714,11 +749,11 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
 
         // Settings and help.
         let bw = 150.0;
-        let by = screen.max.y - 92.0;
+        let by = screen.max.y - pick(92.0, 68.0);
         for (k, (label, page)) in [("Settings", Some(Page::Settings)), ("How to Play", Some(Page::Help)), ("Map Editor", None)].into_iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(cx - 1.5 * bw - 12.0 + k as f32 * (bw + 12.0), by), V2::new(bw, 34.0));
             let resp = ui.put(r, egui::Button::new(RichText::new(label).family(heading()).size(17.0)));
-            if resp.clicked() {
+            if resp.nav_clicked() {
                 match page {
                     Some(p) => st.page = Some(p),
                     None => out.editor = true,
@@ -728,9 +763,13 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         }
         let onoff = |b: bool| if b { "on" } else { "off" };
         p.text(
-            Pos2::new(cx, screen.max.y - 40.0),
+            Pos2::new(cx, screen.max.y - pick(40.0, 18.0)),
             Align2::CENTER_CENTER,
-            format!("[M] Music: {}      [N] Sound: {}", onoff(audio.music_on), onoff(audio.sfx_on)),
+            if pad::active() {
+                "LB / RB map  ·  Stick or D-pad to move  ·  A to choose  ·  B back".to_string()
+            } else {
+                format!("[M] Music: {}      [N] Sound: {}", onoff(audio.music_on), onoff(audio.sfx_on))
+            },
             FontId::proportional(14.0),
             DIM,
         );
@@ -767,6 +806,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
 }
 
 fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audio, screen: Rect, _t: f32, clicked: &mut bool) {
+    nav::group(ctx, Group::None);
     let sim_daily = sim.daily.is_some();
     let g = &mut sim.game;
     let frame = egui::Frame::new().fill(PANEL_BG).inner_margin(Margin::symmetric(18, 14)).stroke(Stroke::new(1.0, alpha(GOLD, 0.35)));
@@ -775,6 +815,10 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
             let inner = PANEL_W - 36.0;
             ui.set_width(inner);
             ui.set_min_height(screen.height() - 28.0);
+            ui.set_max_width(inner);
+            // The body scrolls if it doesn't fit above the bottom block (small screens, big
+            // interface sizes).
+            egui::ScrollArea::vertical().max_height((screen.height() - 190.0).max(120.0)).auto_shrink([false, true]).show(ui, |ui| {
             ui.set_max_width(inner);
 
             // Header.
@@ -801,16 +845,19 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
             });
 
             // Phase guidance.
-            let hint = match g.phase {
+            let padded = pad::active();
+            let phase_hint = match g.phase {
                 Phase::Build => format!("Place gems ({} left). Each gem is also a wall: shape the maze!", g.bal.gems_per_round - g.placed.len()),
+                Phase::Choose if padded => "Pick one of the new (glowing) gems with the cursor or LB/RB, then X to keep it. The rest turn to rock.".into(),
                 Phase::Choose => "Click one of the new (glowing) gems, then keep it. The rest turn to rock.".into(),
                 Phase::Wave => format!("Wave in progress: {} enemies left", g.creeps.len()),
-                Phase::GameOver => "Defeated. Press R to return to the title.".into(),
-                Phase::Victory => "Victory! Press E for endless or R for the title.".into(),
+                Phase::GameOver => "Defeated.".into(),
+                Phase::Victory => "Victory!".into(),
             };
-            small(ui, hint, DIM);
+            small(ui, phase_hint, DIM);
             if !g.available_recipes().is_empty() {
-                small(ui, "A recipe is ready! Click a pink-ringed gem to forge it.", RECIPE);
+                let t = if padded { "A recipe is ready! Select a pink-ringed gem and press Y to forge it." } else { "A recipe is ready! Click a pink-ringed gem to forge it." };
+                small(ui, t, RECIPE);
             }
             if matches!(g.phase, Phase::Build | Phase::Choose) {
                 for (r, missing) in g.near_recipes().into_iter().take(2) {
@@ -840,7 +887,7 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
             if g.phase == Phase::Choose {
                 ui.add_space(4.0);
                 let sel_fresh = g.selected.filter(|&i| g.tower(i).is_some_and(|t| t.fresh));
-                if button_tip(ui, "Keep selected  [K]", sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
+                if button_tip(ui, &format!("Keep selected  {}", hint("K", "X")), sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
                     g.keep(false);
                 }
                 let steps = sel_fresh.map_or(0, |i| g.combine_steps(i));
@@ -848,7 +895,7 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                     Some(i) if steps > 0 => {
                         let tw = g.tower(i).unwrap();
                         let what = if steps == 2 { "Four of a kind" } else { "Combine" };
-                        format!("{what} → {}  [C]", g.bal.tier_names[tw.rank + steps])
+                        format!("{what} → {}  {}", g.bal.tier_names[tw.rank + steps], hint("C", "Y"))
                     }
                     _ => "Combine (needs a matching pair)".into(),
                 };
@@ -881,7 +928,7 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 odds.iter().enumerate().filter(|(_, o)| **o > 0).map(|(tier, o)| format!("{} {}%", g.bal.tier_names[tier], o * 100 / total)).collect();
             small(ui, odds_text.join("   "), DIM);
             let label = match g.luck_cost() {
-                Some(c) => format!("Upgrade quality ({c} gold)  [U]"),
+                Some(c) => format!("Upgrade quality ({c} gold)  {}", hint("U", "D-pad ↑")),
                 None => "Quality maxed".into(),
             };
             let can = g.luck_cost().is_some_and(|c| g.gold >= c) && !matches!(g.phase, Phase::GameOver | Phase::Victory);
@@ -910,7 +957,7 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                     small(ui, &wi.desc, if wi.boss { BAD } else { INFO });
                 }
             }
-
+            });
         });
     });
 
@@ -924,16 +971,19 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
         // Bottom: recipe book and speed.
         ui.horizontal(|ui| {
             let bw = (inner - 6.0) / 2.0;
-            for (label, top, tip) in [("Reset view  [Home]", false, "Back to the default angled view of the whole board."), ("Top-down  [V]", true, "Look straight down at the board.")] {
+            for (label, top, tip) in [
+                (format!("Reset view  {}", hint("Home", "L3")), false, "Back to the default angled view of the whole board."),
+                (format!("Top-down  {}", hint("V", "D-pad ↓")), true, "Look straight down at the board."),
+            ] {
                 let b = egui::Button::new(RichText::new(label).size(14.0)).min_size(V2::new(bw, 28.0));
-                if ui.add(b).on_hover_text(tip).clicked() {
+                if ui.add(b).on_hover_text(tip).nav_clicked() {
                     st.cam_request = Some(top);
                     *clicked = true;
                 }
             }
         });
-        let book_label = if st.book { "Close Recipe Book  [B]" } else { "Recipe Book  [B]" };
-        if button_tip(ui, book_label, true, RECIPE, clicked, "Every special tower and its ingredients.") {
+        let book_label = format!("{}  {}", if st.book { "Close Recipe Book" } else { "Recipe Book" }, hint("B", "Select"));
+        if button_tip(ui, &book_label, true, RECIPE, clicked, "Every special tower and its ingredients.") {
             st.book = !st.book;
         }
         ui.add_space(2.0);
@@ -944,19 +994,24 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 let b = egui::Button::new(RichText::new(label).size(15.0).color(if on { GOLD } else { TEXT }))
                     .min_size(V2::new(bw, 28.0))
                     .fill(if on { Color32::from_rgb(70, 58, 36) } else { STONE });
-                if ui.add(b).clicked() {
+                if ui.add(b).nav_clicked() {
                     st.speed = sp;
                     *clicked = true;
                 }
             }
             let b = egui::Button::new(RichText::new(if st.paused { "Play" } else { "Pause" }).size(15.0)).min_size(V2::new(bw, 28.0));
-            if ui.add(b).clicked() {
+            if ui.add(b).nav_clicked() {
                 st.paused = !st.paused;
                 *clicked = true;
             }
         });
-        small(ui, "1/2/3 speed · Space pause · Esc menu", DIM);
-        small(ui, "Camera: WASD pan · Q/E rotate · scroll zoom", DIM);
+        if pad::active() {
+            small(ui, "A select · B back · LB/RB towers · ←→ speed", DIM);
+            small(ui, "Right stick camera · LT/RT zoom · R3 pause", DIM);
+        } else {
+            small(ui, "1/2/3 speed · Space pause · Esc menu", DIM);
+            small(ui, "Camera: WASD pan · Q/E rotate · scroll zoom", DIM);
+        }
         });
 }
 
@@ -964,7 +1019,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     if g.is_rock(sel) {
         section(ui, "Rock");
         small(ui, "Rocks are walls. Remove one to reshape your maze (between waves only).", DIM);
-        let label = format!("Remove rock ({} gold)  [X]", g.bal.rock_removal_cost);
+        let label = format!("Remove rock ({} gold)  {}", g.bal.rock_removal_cost, hint("X", "X"));
         if button_tip(ui, &label, g.can_remove_rock(sel), GOLD, clicked, "Rocks can only be removed between waves.") {
             *confirm = Some(sel);
         }
@@ -995,7 +1050,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     if let Kind::Special(_) = tw.kind {
         match g.special_upgrade_cost(sel) {
             Some(cost) => {
-                let label = format!("Upgrade to Lv {} ({cost} gold)  [L]", tw.rank + 2);
+                let label = format!("Upgrade to Lv {} ({cost} gold)  {}", tw.rank + 2, hint("L", "X"));
                 let can = g.gold >= cost && !matches!(g.phase, Phase::GameOver | Phase::Victory);
                 if button_tip(ui, &label, can, GOLD, clicked, "Each level multiplies the special's damage.") {
                     g.upgrade_special(sel);
@@ -1008,7 +1063,11 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     }
     for (r, ings) in g.recipes_for(sel) {
         let name = g.bal.specials[r].name.clone();
-        let label = if ings.is_some() { format!("Forge {name}!") } else { format!("Part of: {name}") };
+        let label = match ings {
+            Some(_) if pad::active() => format!("Forge {name}!  (Y)"),
+            Some(_) => format!("Forge {name}!"),
+            None => format!("Part of: {name}"),
+        };
         let tip = if ings.is_some() { "Combine the ingredients into this special tower here." } else { "You don't own all the ingredients yet. See the Recipe Book (B)." };
         if button_tip(ui, &label, ings.is_some(), RECIPE, clicked, tip) {
             g.forge(r, sel);
@@ -1017,6 +1076,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
 }
 
 fn book(ctx: &egui::Context, g: &Game, view: Rect, _t: f32, open: &mut bool, clicked: &mut bool) {
+    nav::group(ctx, Group::Modal);
     let w = (view.width() - 60.0).min(900.0);
     // Dim the board behind the book.
     ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, "book_dim".into())).rect_filled(view, CornerRadius::ZERO, Color32::from_rgba_unmultiplied(0, 0, 0, 120));
@@ -1032,7 +1092,7 @@ fn book(ctx: &egui::Context, g: &Game, view: Rect, _t: f32, open: &mut bool, cli
                     ui.add_space(16.0);
                     ui.label(RichText::new("Ingredients you own are green. Forge between waves.").size(14.0).color(DIM));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new("Close  [B]").size(14.0)).clicked() {
+                        if ui.button(RichText::new(format!("Close  {}", hint("B", "B"))).size(14.0)).nav_clicked() {
                             *open = false;
                             *clicked = true;
                         }
@@ -1040,6 +1100,7 @@ fn book(ctx: &egui::Context, g: &Game, view: Rect, _t: f32, open: &mut bool, cli
                 });
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(view.height() - 150.0).min_scrolled_height(view.height() - 150.0).show(ui, |ui| {
+                    nav::scroll(ui);
                     for (r, sp) in g.bal.specials.iter().enumerate() {
                         let col = c32(rgb(sp.color));
                         let probe = Tower::new(Kind::Special(r), 0, false);
@@ -1088,7 +1149,8 @@ fn overlay(
 ) {
     let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, "overlay".into()));
     let cx = view.center().x;
-    let to_screen = |x: f32, y: f32, z: f32| cam.world_to_viewport(ct, bevy::math::Vec3::new(x, y, z)).ok().map(|v| Pos2::new(v.x, v.y));
+    let zoom = ctx.zoom_factor();
+    let to_screen = |x: f32, y: f32, z: f32| cam.world_to_viewport(ct, bevy::math::Vec3::new(x, y, z)).ok().map(|v| Pos2::new(v.x, v.y) / zoom);
 
     // Checkpoint markers so the order is easy to follow.
     let n = g.map.waypoints.len();

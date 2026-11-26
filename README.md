@@ -12,6 +12,8 @@ Download a release from the GitHub **Releases** page:
 - **Windows:** unzip `Facet-<version>-windows.zip` and run `Facet.exe` (keep the `assets`
   folder next to it).
 
+- **Steam Deck:** see [Steam Deck](#steam-deck) below.
+
 Saves, settings and your own maps live in `~/.local/share/facet/` on Linux and
 `%APPDATA%\facet\` on Windows.
 
@@ -35,6 +37,31 @@ Controls: click to place / select · `K` keep · `C` combine · `U` quality · `
 `WASD` or arrows pan · `Q`/`E` or right-drag rotate · scroll zoom · middle-drag pan ·
 `Home` reset view · `V` top-down view · `F11` fullscreen · `Esc` menu.
 
+Controller (Xbox, PlayStation or Steam Deck): left stick moves a cursor over the board ·
+`A` place / select · `B` deselect / back · `X` keep, remove a selected rock or upgrade a selected
+special · `Y` forge (when a recipe is ready) or combine · `LB`/`RB` jump between towers (the new
+gems while choosing) · D-pad ↑ gem quality, ↓ top-down view, ←/→ game speed · right stick camera ·
+`LT`/`RT` zoom · `L3` reset view · `R3` pause · `Start` menu · `Select` recipe book. In menus the
+stick or D-pad moves the highlight, `A` chooses, `B` goes back. Touching the mouse or trackpad
+switches the on-screen hints back to keyboard and mouse.
+
+## Steam Deck
+
+1. In Desktop Mode, download the AppImage (e.g. into `~/Applications`). Right-click it →
+   Properties → Permissions → tick "Is executable".
+2. Open Steam → **Games → Add a Non-Steam Game to My Library…** → **Browse…**, set the file type
+   to "All Files", pick the AppImage and click **Add Selected Programs**.
+3. Optional artwork: `packaging/steam/` has a library capsule (`capsule.png`, 600×900), a wide
+   capsule (`capsule_wide.png`), a hero banner (`hero.png`) and a logo (`logo.png`). In the Steam
+   library, right-click Facet → **Manage → Set custom artwork** for the capsules; right-click the
+   banner on its page for the hero and logo.
+4. Back in Game Mode, launch Facet from the library. It starts fullscreen on the Deck. Steam's
+   default gamepad layout works as is; the right trackpad acts as a mouse.
+5. If the text feels small, open **Settings → Interface size** and pick 115% or 130%.
+
+The Deck's own performance menu (… button → battery icon) can cap the frame rate to save battery;
+the Low and Medium graphics settings also help.
+
 ## Build from source
 
 Needs Rust (stable) and, on Linux, the ALSA and udev development packages
@@ -48,13 +75,14 @@ Needs Rust (stable) and, on Linux, the ALSA and udev development packages
 ### Layout
 
 - `src/` – the Bevy client: 3D scene (`view.rs`, `terrain.rs`, `mesh.rs`, `env.rs`, `atmosphere.rs`,
-  `creatures.rs`), egui interface (`ui.rs`, `menus.rs`, `editor.rs`), audio (`audio.rs`).
+  `creatures.rs`), egui interface (`ui.rs`, `menus.rs`, `editor.rs`), controller (`pad.rs`, `nav.rs`),
+  audio (`audio.rs`).
 - `core/` – the game rules (data, pathfinding, simulation, saves, the test bot). No graphics.
 - `data/` – `balance.json` (all numbers: gems, odds, waves, recipes) and `maps.json` (built-in maps).
   Both are built into the game; when run from the project folder the files are read at startup,
   so edits apply on relaunch without recompiling.
 - `assets/` – creature models, sound effects, music and fonts (see `assets/CREDITS.md`).
-- `packaging/` – icon and desktop entry. `.github/workflows/release.yml` – release builds.
+- `packaging/` – icon, desktop entry and Steam library artwork. `.github/workflows/release.yml` – release builds.
 
 ### Tests and balance
 
@@ -65,7 +93,10 @@ runs the rules tests and a headless bot through 6 games as a balance check
 
 Debug helpers (debug runs never write records): `FACET3D_MAP=n`, `FACET3D_PLAY=difficulty`
 (skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave),
-`FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder).
+`FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder),
+`FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PAD=1` (controller hints
+without a controller), `FACET3D_NOUI=1` (hide the interface), `FACET3D_SHOT=out.png` (save a
+screenshot of the game window after `FACET3D_SHOT_AT` seconds, default 6, then quit).
 
 ## Map editor
 
