@@ -52,7 +52,8 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] AppImage replaces itself in place; Windows zip swaps files (*.old removed next start)
 - [x] Downloads checked against SHA256SUMS (published by CI); fixed release file names
 - [x] Tested end to end against a local server (update installs; bad checksum refused)
-- [ ] Tag v0.1.1 and install it once by hand on each device
+- [x] Tagged v0.1.1 (release has AppImage, Windows zip, SHA256SUMS)
+- [ ] Install v0.1.1 once by hand on each device
 - [ ] Windows update path tested in the VM
 
 ## Done
