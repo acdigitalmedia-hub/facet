@@ -372,3 +372,43 @@ fn menus(sim: &mut Sim, st: &mut UiState, pad: &mut Pad, pressed: impl Fn(B) -> 
         }
     }
 }
+
+/// `FACET3D_PADLOG=1`: prints each controller and every button it reports, for checking mappings.
+pub fn pad_log(pads: Query<(Entity, &Gamepad, Option<&Name>), Added<Gamepad>>, all: Query<(Entity, &Gamepad)>) {
+    if std::env::var_os("FACET3D_PADLOG").is_none() {
+        return;
+    }
+    for (e, g, n) in &pads {
+        eprintln!("PADLOG connected {e:?} name={:?} vendor={:?} product={:?}", n.map(|n| n.as_str()), g.vendor_id(), g.product_id());
+    }
+    for (e, g) in &all {
+        for b in g.get_just_pressed() {
+            eprintln!("PADLOG {e:?} pressed {b:?}");
+        }
+    }
+}
+
+/// Controllers missing from the bundled SDL database. Without an entry the X and Y buttons come
+/// through swapped (the Linux driver reports X as BTN_X, which the fallback reads as "north").
+/// Same layout as the Xbox 360 pad, since they use the same `xpad` driver.
+const EXTRA_MAPPINGS: &[&str] = &[
+    "03000000c82d00000b31000014010000,8BitDo Ultimate 2 Wireless,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b8,leftshoulder:b4,leftstick:b9,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b10,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Linux,",
+];
+
+/// Adds [`EXTRA_MAPPINGS`] to `SDL_GAMECONTROLLERCONFIG` (keeping any Steam set), which gilrs
+/// reads when it starts. Call first thing in `main`, before any threads exist.
+pub fn add_mappings() {
+    let mut cfg = std::env::var("SDL_GAMECONTROLLERCONFIG").unwrap_or_default();
+    for m in EXTRA_MAPPINGS {
+        let guid = &m[..32];
+        if !cfg.contains(guid) {
+            if !cfg.is_empty() && !cfg.ends_with('\n') {
+                cfg.push('\n');
+            }
+            cfg.push_str(m);
+            cfg.push('\n');
+        }
+    }
+    // SAFETY: called at the very start of main, while the program is still single-threaded.
+    unsafe { std::env::set_var("SDL_GAMECONTROLLERCONFIG", cfg) };
+}

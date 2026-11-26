@@ -323,6 +323,7 @@ pub fn view_preset(w: f32, h: f32, top: bool) -> (Vec3, f32, f32, f32) {
 }
 
 fn main() {
+    pad::add_mappings();
     let (bal, e1) = Balance::load();
     let (maps, e2) = MapDef::load_all();
     let data_err = e1.or(e2);
@@ -435,7 +436,7 @@ fn main() {
             (keys, pad::gamepad, apply_settings, rebuild, drive, events, sync_scene, view::animate, creatures::corpses, atmosphere::update, atmosphere::light_shift, camera, viewport, hover, view::path_dots, draw_overlays, audio::flush).chain(),
         )
         .add_systems(EguiPrimaryContextPass, ui::interface)
-        .add_systems(Last, debug_shot)
+        .add_systems(Last, (debug_shot, pad::pad_log))
         .run();
 }
 

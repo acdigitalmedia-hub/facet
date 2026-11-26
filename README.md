@@ -94,7 +94,7 @@ runs the rules tests and a headless bot through 6 games as a balance check
 Debug helpers (debug runs never write records): `FACET3D_MAP=n`, `FACET3D_PLAY=difficulty`
 (skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave),
 `FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder),
-`FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PAD=1` (controller hints
+`FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PADLOG=1` (print controller buttons), `FACET3D_PAD=1` (controller hints
 without a controller), `FACET3D_NOUI=1` (hide the interface), `FACET3D_SHOT=out.png` (save a
 screenshot of the game window after `FACET3D_SHOT_AT` seconds, default 6, then quit).
 
