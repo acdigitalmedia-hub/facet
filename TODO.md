@@ -35,7 +35,7 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Linux AppImage (`scripts/build-appimage.sh`)
 - [x] Windows build (zip, from CI) – needs testing in a VM
 - [x] Automatic releases: GitHub Actions on `v*` tags (`.github/workflows/release.yml`)
-- [ ] First CI run checked, first release (v0.1.0) tagged
+- [x] First CI run checked, first release (v0.1.0) tagged
 
 ## 6. Steam Deck & controller  ✓ (awaiting Deck playtest)
 - [x] Controller support: board cursor, face-button actions, camera on right stick/triggers (`src/pad.rs`)
@@ -43,8 +43,17 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Controller button hints that switch with the last input device; Controller section in How to Play
 - [x] Small screens: Interface size setting (100/115/130%), compact title layout, scrolling side panel
 - [x] Fullscreen by default on the Deck; Steam library artwork (`packaging/steam/`); Deck guide in README
-- [ ] Playtest on the Deck (Game Mode, non-Steam game) and with a controller on the PC
+- [x] Controller on the PC: 8BitDo Ultimate 2 had X/Y swapped (missing SDL mapping), fixed
+- [ ] Playtest on the Deck (Game Mode, non-Steam game)
 - [ ] Map editor stays mouse/touch only (by choice)
+
+## 7. In-game updater  ✓
+- [x] Title screen checks GitHub releases; Update / What's new / Not now; progress; restart
+- [x] AppImage replaces itself in place; Windows zip swaps files (*.old removed next start)
+- [x] Downloads checked against SHA256SUMS (published by CI); fixed release file names
+- [x] Tested end to end against a local server (update installs; bad checksum refused)
+- [ ] Tag v0.1.1 and install it once by hand on each device
+- [ ] Windows update path tested in the VM
 
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)

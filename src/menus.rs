@@ -645,7 +645,7 @@ pub fn update_banner(ctx: &egui::Context, screen: Rect, clicked: &mut bool) {
                         }
                         State::Ready(version) => {
                             ui.label(RichText::new(format!("Facet {version} is installed")).family(heading()).size(17.0).color(GOOD));
-                            ui.label(RichText::new("Restart to play the new version (or it starts next time).").size(13.5).color(TEXT));
+                            ui.label(RichText::new("Restart to play it now, or it starts next time.").size(13.5).color(TEXT));
                             ui.add_space(4.0);
                             ui.horizontal(|ui| {
                                 if ui.button(RichText::new("Restart now").size(14.0).color(GOLD)).nav_clicked() {
