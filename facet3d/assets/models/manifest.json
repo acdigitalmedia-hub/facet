@@ -1,0 +1,454 @@
+{
+ "Cyclops": {
+  "min": [
+   -81.833717,
+   -3.071079,
+   -68.647072
+  ],
+  "max": [
+   81.833717,
+   163.664993,
+   78.621063
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Deer": {
+  "min": [
+   -94.574585,
+   -4.008015,
+   -68.647079
+  ],
+  "max": [
+   94.574585,
+   185.756287,
+   75.921738
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "GreenDemon": {
+  "min": [
+   -84.213509,
+   -4.433313,
+   -68.647057
+  ],
+  "max": [
+   84.213509,
+   157.999176,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Crab": {
+  "min": [
+   -128.342194,
+   -2.869126,
+   -68.647072
+  ],
+  "max": [
+   128.342194,
+   153.809387,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Bee": {
+  "min": [
+   -144.50528,
+   -2.020117,
+   -68.647072
+  ],
+  "max": [
+   144.50528,
+   187.695938,
+   79.894333
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Death",
+   "MonsterArmature|Flying"
+  ],
+  "walk": 2,
+  "fly": 2,
+  "death": 1,
+  "hit": null
+ },
+ "Bat": {
+  "min": [
+   -160.312592,
+   -2.338543,
+   -68.647079
+  ],
+  "max": [
+   160.312592,
+   173.060272,
+   73.048538
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Death",
+   "MonsterArmature|Flying"
+  ],
+  "walk": 2,
+  "fly": 2,
+  "death": 1,
+  "hit": null
+ },
+ "Yeti": {
+  "min": [
+   -84.213509,
+   -2.044316,
+   -68.647072
+  ],
+  "max": [
+   84.213509,
+   164.638794,
+   75.438744
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Ghost": {
+  "min": [
+   -72.583679,
+   -0.472711,
+   -72.583672
+  ],
+  "max": [
+   72.583679,
+   139.28804,
+   73.649315
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "YellowDragon": {
+  "min": [
+   -160.312592,
+   -4.455045,
+   -68.647072
+  ],
+  "max": [
+   160.312592,
+   160.236816,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_Front.001",
+   "MonsterArmature|Death",
+   "MonsterArmature|Flying",
+   "MonsterArmature|Flying.001",
+   "MonsterArmature|Flying.002",
+   "MonsterArmature|Flying.003",
+   "MonsterArmature|HitRecieve"
+  ],
+  "walk": 3,
+  "fly": 3,
+  "death": 2,
+  "hit": 7
+ },
+ "Alien": {
+  "min": [
+   -109.470726,
+   -2.600488,
+   -68.647072
+  ],
+  "max": [
+   109.470726,
+   203.12796,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Cthulhu": {
+  "min": [
+   -160.312592,
+   -5.667105,
+   -68.647072
+  ],
+  "max": [
+   160.312592,
+   150.813599,
+   80.338455
+  ],
+  "anims": [
+   "MonsterArmature|Flying",
+   "MonsterArmature|HitRecieve"
+  ],
+  "walk": 0,
+  "fly": 0,
+  "death": null,
+  "hit": 1
+ },
+ "Skull": {
+  "min": [
+   -73.044556,
+   -8.498308,
+   -73.044106
+  ],
+  "max": [
+   73.044556,
+   146.509888,
+   73.439247
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Tree": {
+  "min": [
+   -140.570251,
+   -4.068841,
+   -95.976723
+  ],
+  "max": [
+   140.570251,
+   280.529358,
+   76.710014
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Panda": {
+  "min": [
+   -91.486511,
+   -2.977911,
+   -68.647079
+  ],
+  "max": [
+   91.486511,
+   161.14241,
+   78.641594
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Demon": {
+  "min": [
+   -98.903099,
+   -5.202706,
+   -68.647072
+  ],
+  "max": [
+   98.903099,
+   157.229797,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Alien_Tall": {
+  "min": [
+   -101.472763,
+   -4.186997,
+   -84.411613
+  ],
+  "max": [
+   101.472763,
+   206.581238,
+   73.048546
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ },
+ "Cactus": {
+  "min": [
+   -118.352859,
+   -16.685799,
+   -72.467682
+  ],
+  "max": [
+   118.352859,
+   205.754501,
+   73.375977
+  ],
+  "anims": [
+   "MonsterArmature|Bite_Front",
+   "MonsterArmature|Bite_InPlace",
+   "MonsterArmature|Dance",
+   "MonsterArmature|Death",
+   "MonsterArmature|HitRecieve",
+   "MonsterArmature|Idle",
+   "MonsterArmature|Jump",
+   "MonsterArmature|No",
+   "MonsterArmature|Walk",
+   "MonsterArmature|Yes"
+  ],
+  "walk": 8,
+  "fly": 8,
+  "death": 3,
+  "hit": 4
+ }
+}
