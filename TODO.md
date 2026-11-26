@@ -30,9 +30,12 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Light shift over the course of a run (day → evening)
 
 ## 5. Packaging
-- [ ] Retire the 2D version (`src/`, macroquad) once 3D is confirmed complete
-- [ ] Linux AppImage or Flatpak
-- [ ] Windows build
+- [x] Retire the 2D version (removed; it's in git history). 3D client moved to the project root
+- [x] Installed-game paths: built-in maps/balance embedded, custom maps in the user folder
+- [x] Linux AppImage (`scripts/build-appimage.sh`)
+- [x] Windows build (zip, from CI) – needs testing in a VM
+- [x] Automatic releases: GitHub Actions on `v*` tags (`.github/workflows/release.yml`)
+- [ ] First CI run checked, first release (v0.1.0) tagged
 
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
@@ -43,10 +46,9 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Crossroads 4th checkpoint; smoothed roads and path dots
 
 ## Notes
-- Map editor: Title → Map Editor. Saves to data/maps.json (backup maps.json.bak); editor-made maps are `custom` and excluded from the daily rotation. Playtests don't record.
+- Map editor: Title → Map Editor. Custom maps save to ~/.local/share/facet/maps.json (backup .bak) and are excluded from the daily rotation. Built-in maps are only editable when run from the project folder (data/maps.json exists in cwd); otherwise they can be saved as a renamed copy. Playtests don't record.
 - Adding built-in maps changes which map the daily picks (pool size) – avoid mid-day.
 - Item 2 content: Shades (invisible; Amethyst/Obsidian Eye/All-Seeing Eye detect, towers see within 1.6), Menders (heal), Guardians (shield), Imps (sprint), Broodmothers (split), Warded (immune). Specials: Ember Crown (burn), Glacier Arc (chain slow), Gilded Idol (bounty); ascended: Inferno, Tempest, Philosopher's Stone, All-Seeing Eye. Mutator records are keyed separately; daily = 'Daily YYYY-MM-DD'.
-- The old 2D game can't read the new balance.json (special ingredients) and falls back to its embedded copy.
 - Debug runs (any FACET3D_* env var) never write records.
 - Playtest feedback so far: Coil Normal lost at wave 20 (Hydra); synth audio replaced; likes 3D.
 - Crossroads got easier after the extra checkpoint (bot 6/6 on Normal) – watch in playtests.

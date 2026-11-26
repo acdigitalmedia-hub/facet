@@ -73,12 +73,18 @@ impl Default for Save {
     }
 }
 
-fn path() -> Option<PathBuf> {
+/// The per-user folder for saves and custom maps: `~/.local/share/facet` on Linux,
+/// `%APPDATA%\facet` on Windows.
+pub fn user_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(base.join("facet").join("save.json"))
+    Some(base.join("facet"))
+}
+
+fn path() -> Option<PathBuf> {
+    Some(user_dir()?.join("save.json"))
 }
 
 impl Save {

@@ -13,4 +13,4 @@ Everything here is CC0 (public domain). No attribution is required, but credit i
   - `build_autumn.ogg` – A Place I Call Home; `build_snow.ogg` – Innocence (JRPG Pack #4 Calm)
   - `build_ash.ogg` – Catacombs; `boss.ogg` – Apocalypse (JRPG Pack #3 Evil)
   - `wave1.ogg` – Army Approaching; `wave2.ogg` – Preparing For Battle (JRPG Pack #5 Action)
-- **Fonts** – Cinzel and Liberation Sans (SIL OFL), see `../../assets/fonts`.
+- **Fonts** – Cinzel and Liberation Sans (SIL OFL), see `fonts/`.

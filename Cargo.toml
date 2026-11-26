@@ -2,10 +2,26 @@
 name = "facet"
 version = "0.1.0"
 edition = "2024"
-default-run = "facet"
+description = "A 3D gem maze tower defense"
 
 [dependencies]
-macroquad = { version = "0.4", default-features = false, features = ["audio"] }
+facet-core = { path = "core" }
+bevy = { version = "0.20", features = ["wav"] }
+bevy_egui = "0.43"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[workspace]
+members = [".", "core"]
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = "thin"
+codegen-units = 4

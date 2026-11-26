@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Facet
+GenericName=Tower Defense
+Comment=A 3D gem maze tower defense
+Exec=facet
+Icon=facet
+Terminal=false
+Categories=Game;StrategyGame;
+StartupWMClass=facet

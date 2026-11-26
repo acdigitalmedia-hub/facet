@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 const EMBEDDED: &str = include_str!("../../data/balance.json");
 const EMBEDDED_MAPS: &str = include_str!("../../data/maps.json");
+/// The built-in maps when running from the project folder.
+const DEV_MAPS: &str = "data/maps.json";
 
 /// A map: grid size, checkpoints, fixed walls and a visual theme.
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
@@ -28,9 +30,23 @@ pub struct MapDef {
 }
 
 impl MapDef {
-    /// Writes all maps to `data/maps.json`, keeping the previous file as `maps.json.bak`.
+    /// Whether the built-in maps can be edited: only when running from the project folder,
+    /// where they live in `data/maps.json` (an installed game has them built in).
+    pub fn builtins_editable() -> bool {
+        std::path::Path::new(DEV_MAPS).is_file()
+    }
+
+    /// Saves maps: custom ones to `maps.json` in the user folder, built-in ones to
+    /// `data/maps.json` when running from the project (ignored otherwise). The previous files
+    /// are kept as `maps.json.bak`.
     pub fn save_all(maps: &[MapDef]) -> Result<(), String> {
-        Self::save_all_in(std::path::Path::new("data"), maps)
+        let (custom, builtin): (Vec<MapDef>, Vec<MapDef>) = maps.iter().cloned().partition(|m| m.custom);
+        let dir = crate::save::user_dir().ok_or("No user folder to save maps in")?;
+        Self::save_all_in(&dir, &custom)?;
+        if Self::builtins_editable() && !builtin.is_empty() {
+            Self::save_all_in(std::path::Path::new("data"), &builtin)?;
+        }
+        Ok(())
     }
 
     /// Like `save_all`, into another folder.
@@ -86,17 +102,34 @@ impl MapDef {
         None
     }
 
-    /// Loads `data/maps.json` (falling back to the embedded copy).
+    /// Loads the built-in maps (`data/maps.json` in the project, else the built-in copy),
+    /// followed by the custom maps from the user folder.
     pub fn load_all() -> (Vec<MapDef>, Option<String>) {
         let embedded = || serde_json::from_str::<Vec<MapDef>>(EMBEDDED_MAPS).expect("embedded maps.json is invalid");
-        match std::fs::read_to_string("data/maps.json") {
+        let (mut maps, mut err) = match std::fs::read_to_string(DEV_MAPS) {
             Ok(text) => match serde_json::from_str::<Vec<MapDef>>(&text) {
                 Ok(m) if !m.is_empty() => (m, None),
                 Ok(_) => (embedded(), Some("maps.json is empty, using defaults".into())),
                 Err(e) => (embedded(), Some(format!("maps.json error, using defaults: {e}"))),
             },
             Err(_) => (embedded(), None),
+        };
+        if let Some(dir) = crate::save::user_dir()
+            && let Ok(text) = std::fs::read_to_string(dir.join("maps.json"))
+        {
+            match serde_json::from_str::<Vec<MapDef>>(&text) {
+                Ok(user) => {
+                    for mut m in user {
+                        m.custom = true;
+                        if !maps.iter().any(|o| o.name == m.name) {
+                            maps.push(m);
+                        }
+                    }
+                }
+                Err(e) => err = Some(format!("Your custom maps couldn't be read: {e}")),
+            }
         }
+        (maps, err)
     }
 
     pub fn is_wall(&self, x: i32, y: i32) -> bool {

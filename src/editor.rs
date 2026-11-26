@@ -1,5 +1,6 @@
 //! The map editor: paint walls (cliffs or water), place and order checkpoints, pick the
-//! setting and size, see the enemy route live, playtest and save to `data/maps.json`.
+//! setting and size, see the enemy route live, playtest and save (custom maps go to the
+//! user folder, see `MapDef::save_all`).
 
 use bevy_egui::egui::{self, Align2, Color32, CornerRadius, FontId, Margin, Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Vec2 as V2};
 use facet_core::data::MapDef;
@@ -150,8 +151,16 @@ impl Editor {
         if clash {
             return Err(format!("A map called \"{}\" already exists", m.name));
         }
+        let locked = |o: &MapDef| !o.custom && !MapDef::builtins_editable();
         match self.original.as_ref().and_then(|n| maps.iter().position(|o| &o.name == n)) {
-            Some(i) => maps[i] = m.clone(),
+            // A built-in map in an installed game: keep it, save the edit as the player's own copy.
+            Some(i) if locked(&maps[i]) => {
+                if maps[i].name == m.name {
+                    return Err("Built-in maps can't be changed: give it a new name to save your own copy".into());
+                }
+                maps.push(MapDef { custom: true, ..m.clone() });
+            }
+            Some(i) => maps[i] = MapDef { custom: maps[i].custom, ..m.clone() },
             None => maps.push(MapDef { custom: true, ..m.clone() }),
         }
         MapDef::save_all(&maps)?;
@@ -163,6 +172,9 @@ impl Editor {
     fn delete(&mut self) -> Result<Vec<MapDef>, String> {
         let Some(name) = self.original.clone() else { return Err("This map isn't saved yet".into()) };
         let (mut maps, _) = MapDef::load_all();
+        if maps.iter().any(|m| m.name == name && !m.custom) && !MapDef::builtins_editable() {
+            return Err("Built-in maps can't be deleted".into());
+        }
         maps.retain(|m| m.name != name);
         if maps.is_empty() {
             return Err("Can't delete the last map".into());
@@ -509,7 +521,7 @@ pub fn show(ctx: &egui::Context, ed: &mut Editor, maps: &[MapDef], dt: f32, clic
                     }
                     if ui
                         .add_enabled(ok && ed.dirty, egui::Button::new(RichText::new("Save").family(heading()).size(16.0)).min_size(V2::new(w2, 34.0)))
-                        .on_hover_text("Saves into data/maps.json (the previous file is kept as maps.json.bak).")
+                        .on_hover_text("Saves to your maps (the previous file is kept as maps.json.bak).")
                         .clicked()
                     {
                         match ed.save() {
