@@ -72,7 +72,7 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
       worst → best with odds in Gem Quality
 - [x] Side panel: selected, recipes, gem quality, next wave; book and camera at the bottom
 - [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
-- [ ] Playtest the new layout (PC and Deck), then release v0.1.2
+- [x] Playtested; released v0.1.2
 
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
