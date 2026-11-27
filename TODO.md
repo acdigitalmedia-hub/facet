@@ -74,6 +74,16 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
 - [x] Playtested; released v0.1.2
 
+## 10. Online leaderboards (planned, not started)
+- [ ] Deterministic runs: all randomness (crits etc.) from the run's own seeded stream, plus a
+      move log (placements, keeps, combines, forges, purchases, rock removals)
+- [ ] Server on Cloudflare Workers + D1 (free tier): submit, verify by replaying the move log
+      with facet-core, top-N queries; rate limits and a name filter
+- [ ] In game: opt-in + display name (hidden random player id, no accounts), leaderboard page
+      on the title screen, results queued while offline
+- [ ] Boards: Daily Challenge first (today's top + your rank), then best per map / difficulty
+- [ ] User sets up a free Cloudflare account and runs one login command
+
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
 - [x] Maps + art pass (5 maps)
