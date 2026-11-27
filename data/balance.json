@@ -813,12 +813,12 @@
           110
         ],
         "count": 10,
-        "hp_mult": 1.0,
+        "hp_mult": 0.5,
         "speed_mult": 0.9,
         "armor": 1,
         "size": 0.34,
-        "heal": 0.04,
-        "desc": "Heal nearby enemies. Kill them first."
+        "heal": 0.03,
+        "desc": "Heal nearby enemies that haven't been hit for a second. Heals don't stack, and poison stops them. Kill them first."
       },
       {
         "name": "Guardians",

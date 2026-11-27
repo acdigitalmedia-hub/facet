@@ -32,6 +32,8 @@ pub const BURN_RADIUS: f32 = 0.8;
 const SHIELD_DELAY: f32 = 2.5;
 /// Regenerating bosses only heal after this long without taking damage (poison counts).
 pub const REGEN_DELAY: f32 = 2.0;
+/// Menders only heal allies that haven't been hit for this long.
+pub const HEAL_DELAY: f32 = 1.0;
 /// Sprint cycle: seconds between sprints, and sprint length.
 const SPRINT_PERIOD: f32 = 4.0;
 const SPRINT_TIME: f32 = 1.2;
@@ -1137,15 +1139,17 @@ impl Game {
             c.revealed = if seen { REVEAL_LINGER } else { (c.revealed - dt).max(0.0) };
         }
 
-        // Menders heal their neighbours.
+        // Menders heal their neighbours. Heals don't stack (a pack of menders heals no faster
+        // than one), and enemies under fire or poisoned can't be healed: menders patch up
+        // between your kill zones, not inside them.
         let healers: Vec<(u64, Vec2, f32)> = self.creeps.iter().filter(|c| c.heal > 0.0 && c.hp > 0.0).map(|c| (c.id, c.pos, c.heal)).collect();
         if !healers.is_empty() {
             for c in &mut self.creeps {
-                for &(id, p, h) in &healers {
-                    if id != c.id && c.hp > 0.0 && p.distance(c.pos) <= HEAL_RANGE {
-                        c.hp = (c.hp + h * c.max_hp * dt).min(c.max_hp);
-                    }
+                if c.hp <= 0.0 || c.poison_t > 0.0 || c.since_hit < HEAL_DELAY {
+                    continue;
                 }
+                let h = healers.iter().filter(|&&(id, p, _)| id != c.id && p.distance(c.pos) <= HEAL_RANGE).map(|h| h.2).fold(0.0, f32::max);
+                c.hp = (c.hp + h * c.max_hp * dt).min(c.max_hp);
             }
         }
 

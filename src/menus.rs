@@ -232,7 +232,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Special enemies",
-        "Shades are invisible: only towers near an Amethyst (or Obsidian Eye) can see them, plus towers they pass right next to. Menders heal enemies around them. Guardians carry a recharging shield (the blue bar). Imps sprint in bursts. Broodmothers split into hatchlings. Warded enemies ignore slows, poison and armor shred.",
+        "Shades are invisible: only towers near an Amethyst (or Obsidian Eye) can see them, plus towers they pass right next to. Menders heal enemies around them that haven't been hit for a second (poison stops the healing). Guardians carry a recharging shield (the blue bar). Imps sprint in bursts. Broodmothers split into hatchlings. Warded enemies ignore slows, poison and armor shred.",
     ),
     (
         "Ascended specials",

@@ -74,13 +74,20 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
 - [x] Playtested; released v0.1.2
 
+## 13. Mender balance (2026-11-27)
+- [x] Endless wave 27 (Menders, ~224k HP each) was unkillable: heals stacked (each mender
+      healed 4%/s to everything near it). Now heals don't stack, skip enemies hit in the last
+      second or poisoned, rate 3%/s, Menders 0.5× HP. Bot: wave 27 now cleared in every run
+      that reaches it (was: all 10 escaped)
+- [ ] Playtest
+
 ## 12. Prompts and reminders (2026-11-27)
 - [x] Checkpoint / Start / Exit labels drawn under the interface (they showed over the tray)
 - [x] Reminder above the tray when a gem quality upgrade is affordable before placing
 - [x] Reminder above the tray when a recipe is ready, with Show me / Forge (new key: F)
 - [x] Button prompts drawn as keycaps and controller buttons (src/glyph.rs, `{K|A}` in text)
 - [x] Help lists keyboard and controller controls with the same icons
-- [ ] Playtest
+- [x] Playtest
 
 ## 11. Targeting, upcoming waves, Tab (2026-11-26, released v0.1.3)
 - [x] Per-tower targeting: First / Last / Strongest / Weakest (panel buttons, T, controller Y)
