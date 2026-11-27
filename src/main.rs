@@ -636,7 +636,18 @@ fn keys(input: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut st: ResMut<U
     if input.just_pressed(KeyCode::KeyU) {
         g.buy_luck();
     }
+    // Tab / Shift+Tab: next / previous tower (this round's new gems while choosing).
+    if input.just_pressed(KeyCode::Tab) {
+        let back = input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight);
+        g.cycle_selection(if back { -1 } else { 1 });
+    }
     if let Some(sel) = g.selected {
+        if input.just_pressed(KeyCode::KeyT)
+            && let Some(t) = g.tower(sel)
+        {
+            let next = t.target.next();
+            g.set_target(sel, next);
+        }
         if input.just_pressed(KeyCode::KeyX) && g.is_rock(sel) {
             st.confirm_rock = Some(sel);
         }

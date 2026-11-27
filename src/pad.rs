@@ -11,7 +11,7 @@
 //! | A             | place / select                            | press             |
 //! | B             | deselect, dismiss a tip                   | back              |
 //! | X             | keep · remove rock · upgrade special      |                   |
-//! | Y             | forge (if ready) · combine                |                   |
+//! | Y             | forge (if ready) · combine · targeting    |                   |
 //! | LB / RB       | previous / next tower (new gems first)    | map (title)       |
 //! | D-pad ↑ / ↓   | gem quality / top-down view               | move focus        |
 //! | D-pad ← / →   | slower / faster                           | move focus        |
@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bevy::input::gamepad::{Gamepad, GamepadButton as B};
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
-use facet_core::game::{Occ, Phase};
+use facet_core::game::Phase;
 use facet_core::path::Cell;
 
 use crate::audio::Audio;
@@ -235,25 +235,11 @@ pub fn gamepad(
 
     // LB / RB: jump between towers (this round's new gems while choosing).
     let cycle = if pressed(B::RightTrigger) { 1 } else if pressed(B::LeftTrigger) { -1 } else { 0 };
-    if cycle != 0 {
-        let list: Vec<usize> = if g.phase == Phase::Choose {
-            g.placed.iter().copied().filter(|&i| g.tower(i).is_some()).collect()
-        } else {
-            (0..g.grid.len()).filter(|&i| matches!(g.grid[i], Occ::Tower(_))).collect()
-        };
-        if !list.is_empty() {
-            let at = g.selected.and_then(|s| list.iter().position(|&i| i == s));
-            let n = list.len() as i32;
-            let k = match at {
-                Some(a) => (a as i32 + cycle).rem_euclid(n),
-                None if cycle > 0 => 0,
-                None => n - 1,
-            } as usize;
-            let i = list[k];
-            g.selected = Some(i);
-            cur = (i as i32 % w, i as i32 / w);
-            audio.click();
-        }
+    if cycle != 0
+        && let Some(i) = g.cycle_selection(cycle)
+    {
+        cur = (i as i32 % w, i as i32 / w);
+        audio.click();
     }
 
     if pressed(B::South) {
@@ -291,6 +277,13 @@ pub fn gamepad(
                 g.selected = Some(ci);
             }
             g.keep(true);
+        } else if let Some(sel) = g.selected
+            && let Some(t) = g.tower(sel).filter(|t| !t.fresh)
+        {
+            // Nothing to forge or combine: Y changes the selected tower's targeting.
+            let next = t.target.next();
+            g.set_target(sel, next);
+            audio.click();
         }
     }
     if pressed(B::Start) {

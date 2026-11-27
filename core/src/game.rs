@@ -129,9 +129,52 @@ pub enum Kind {
     Special(usize),
 }
 
+/// Which enemy in range a tower shoots at.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Target {
+    /// Furthest along the path (closest to escaping).
+    #[default]
+    First,
+    /// Least far along.
+    Last,
+    /// Most HP left (bosses among their escorts, tough enemies).
+    Strongest,
+    /// Least HP left (finishes kills, thins out swarms).
+    Weakest,
+}
+
+impl Target {
+    pub const ALL: [Target; 4] = [Target::First, Target::Last, Target::Strongest, Target::Weakest];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Target::First => "First",
+            Target::Last => "Last",
+            Target::Strongest => "Strongest",
+            Target::Weakest => "Weakest",
+        }
+    }
+
+    pub fn desc(self) -> &'static str {
+        match self {
+            Target::First => "The enemy furthest along the path, closest to escaping.",
+            Target::Last => "The enemy least far along the path.",
+            Target::Strongest => "The enemy with the most HP left: bosses, tough enemies.",
+            Target::Weakest => "The enemy with the least HP left: finishes kills, thins swarms.",
+        }
+    }
+
+    pub fn next(self) -> Target {
+        let k = Target::ALL.iter().position(|&t| t == self).unwrap_or(0);
+        Target::ALL[(k + 1) % Target::ALL.len()]
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Tower {
     pub kind: Kind,
+    #[serde(default)]
+    pub target: Target,
     /// Tier for gems, upgrade level for specials (both 0-based).
     pub rank: usize,
     pub cooldown: f32,
@@ -145,7 +188,7 @@ pub struct Tower {
 
 impl Tower {
     pub fn new(kind: Kind, rank: usize, fresh: bool) -> Tower {
-        Tower { kind, rank, cooldown: 0.0, fresh, damage_dealt: 0.0, kills: 0, flash: 0.0 }
+        Tower { kind, target: Target::First, rank, cooldown: 0.0, fresh, damage_dealt: 0.0, kills: 0, flash: 0.0 }
     }
     pub fn gem(&self) -> Option<usize> {
         match self.kind {
@@ -546,6 +589,34 @@ impl Game {
         self.route = self.route_with(None).expect("route must stay open");
         self.rev += 1;
         self.update_room();
+    }
+
+    /// Sets a tower's targeting.
+    pub fn set_target(&mut self, i: usize, target: Target) {
+        if let Occ::Tower(t) = &mut self.grid[i] {
+            t.target = target;
+        }
+    }
+
+    /// Selects the next (`dir` = 1) or previous (-1) tower: this round's new gems while
+    /// choosing, otherwise every tower. Returns the new selection.
+    pub fn cycle_selection(&mut self, dir: i32) -> Option<usize> {
+        let list: Vec<usize> = if self.phase == Phase::Choose {
+            self.placed.iter().copied().filter(|&i| self.tower(i).is_some()).collect()
+        } else {
+            (0..self.grid.len()).filter(|&i| matches!(self.grid[i], Occ::Tower(_))).collect()
+        };
+        if list.is_empty() {
+            return None;
+        }
+        let n = list.len() as i32;
+        let k = match self.selected.and_then(|s| list.iter().position(|&i| i == s)) {
+            Some(a) => (a as i32 + dir).rem_euclid(n),
+            None if dir > 0 => 0,
+            None => n - 1,
+        } as usize;
+        self.selected = Some(list[k]);
+        self.selected
     }
 
     /// Enemies of the current wave still to come.
@@ -1171,11 +1242,15 @@ impl Game {
             }
             let tp = self.center(i);
             let s = self.stats(t);
-            let target = self
-                .creeps
-                .iter()
-                .filter(|cr| cr.hp > 0.0 && cr.visible() && !(cr.air && s.ground_only) && cr.pos.distance(tp) <= s.range)
-                .max_by(|a, b| a.traveled.partial_cmp(&b.traveled).unwrap());
+            let mode = t.target;
+            let in_range = self.creeps.iter().filter(|cr| cr.hp > 0.0 && cr.visible() && !(cr.air && s.ground_only) && cr.pos.distance(tp) <= s.range);
+            // Ties (e.g. equal HP) go to the enemy furthest along.
+            let target = match mode {
+                Target::First => in_range.max_by(|a, b| a.traveled.total_cmp(&b.traveled)),
+                Target::Last => in_range.min_by(|a, b| a.traveled.total_cmp(&b.traveled)),
+                Target::Strongest => in_range.max_by(|a, b| a.hp.total_cmp(&b.hp).then(a.traveled.total_cmp(&b.traveled))),
+                Target::Weakest => in_range.min_by(|a, b| a.hp.total_cmp(&b.hp).then(b.traveled.total_cmp(&a.traveled))),
+            };
             if let Some(cr) = target {
                 let bonus: f32 = auras.iter().filter(|(p, _)| *p != tp && p.distance(tp) <= AURA_RANGE).map(|a| a.1).sum();
                 let size = 0.12 + 0.03 * t.rank as f32 + if matches!(t.kind, Kind::Special(_)) { 0.06 } else { 0.0 };
@@ -1411,6 +1486,37 @@ mod tests {
 
     /// Tests that seed the global RNG take turns.
     static SEEDED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Each targeting mode picks the right enemy in range.
+    #[test]
+    fn targeting() {
+        let (bal, _) = Balance::load();
+        let map = MapDef::load_all().0.swap_remove(0);
+        let mut g = Game::new(bal, map, 0);
+        // A tower on the first free cell next to the route, enemies on the route near it.
+        let ti = (0..g.grid.len()).find(|&i| g.can_place(g.cell_of(i)).is_ok()).unwrap();
+        g.grid[ti] = Occ::Tower(Tower::new(Kind::Gem(0), 2, false));
+        let tp = g.center(ti);
+        g.phase = Phase::Wave;
+        for (hp, traveled) in [(50.0, 3.0), (80.0, 1.0), (20.0, 2.0)] {
+            g.spawn_creep(0, tp + vec2(0.4, 0.0), 1, traveled);
+            let c = g.creeps.last_mut().unwrap();
+            c.hp = hp;
+            c.max_hp = 100.0;
+            c.speed = 0.0;
+        }
+        let ids: Vec<u64> = g.creeps.iter().map(|c| c.id).collect();
+        for (mode, want) in [(Target::First, ids[0]), (Target::Last, ids[1]), (Target::Strongest, ids[1]), (Target::Weakest, ids[2])] {
+            g.projectiles.clear();
+            g.set_target(ti, mode);
+            if let Occ::Tower(t) = &mut g.grid[ti] {
+                t.cooldown = 0.0;
+            }
+            g.step();
+            let shot = g.projectiles.iter().find(|p| p.src == ti).map(|p| p.target);
+            assert_eq!(shot, Some(want), "{mode:?}");
+        }
+    }
 
     /// A board with no room left: a round in progress goes to choosing; with nothing placed
     /// the round can be skipped.

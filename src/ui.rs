@@ -11,7 +11,7 @@ use bevy_egui::egui::{
 use bevy_egui::EguiContexts;
 use facet_core::color::Color as CColor;
 use facet_core::data::{Ing, MapDef};
-use facet_core::game::{rgb, Event, FxKind, Game, Kind, Mutator, Phase, Stats, Tower};
+use facet_core::game::{rgb, Event, FxKind, Game, Kind, Mutator, Phase, Stats, Target, Tower};
 use facet_core::path::{full_route, Cell};
 
 use crate::audio::Audio;
@@ -998,6 +998,33 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 if !wi.desc.is_empty() {
                     small(ui, &wi.desc, if wi.boss { BAD } else { INFO });
                 }
+
+                // The few waves after that, one line each (details on hover).
+                let last = if g.endless { u32::MAX } else { g.bal.wave_count() as u32 };
+                let upcoming: Vec<u32> = (g.wave + 1..last).take(4).collect();
+                if !upcoming.is_empty() {
+                    ui.add_space(4.0);
+                    small(ui, "Coming up", GOLD);
+                    for w in upcoming {
+                        let wi = g.wave_info(w);
+                        let resp = ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            ui.add_sized(V2::new(54.0, 16.0), egui::Label::new(RichText::new(format!("Wave {}", w + 1)).size(13.0).color(DIM)));
+                            ui.label(RichText::new(format!("{} ×{}", wi.name, wi.count)).size(13.5).color(TEXT));
+                            if wi.boss {
+                                ui.label(RichText::new("BOSS").size(12.0).color(BAD));
+                            } else if wi.air {
+                                ui.label(RichText::new("FLYING").size(12.0).color(INFO));
+                            }
+                        })
+                        .response;
+                        let mut tip = format!("HP {}  ·  Armor {}  ·  Speed {:.1}", wi.hp, wi.armor, wi.speed);
+                        if !wi.desc.is_empty() {
+                            tip = format!("{tip}\n{}", wi.desc);
+                        }
+                        resp.on_hover_text(tip);
+                    }
+                }
             }
             });
         });
@@ -1125,7 +1152,7 @@ fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked
                 Phase::Build if st.marked.is_some() && !padded => "Click the marked cell again to place the gem there.".to_string(),
                 Phase::Build => format!("Place {} more gem{}. Each gem is also a wall: shape the maze!", g.bal.gems_per_round - g.placed.len(), if g.bal.gems_per_round - g.placed.len() == 1 { "" } else { "s" }),
                 _ if padded => "Pick a gem (cursor or LB/RB), then X to keep it. The others turn to rock.".to_string(),
-                _ => "Pick a gem (here or on the board), then keep it. The others turn to rock.".to_string(),
+                _ => "Pick a gem (here, on the board, or Tab), then keep it. The others turn to rock.".to_string(),
             };
             let hint_col = if st.marked.is_some() && g.phase == Phase::Build { GOLD } else { TEXT };
             ui.label(RichText::new(hint_text).size(14.5).color(hint_col));
@@ -1241,6 +1268,21 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     small(ui, &def.detail, DIM);
     if !tw.fresh {
         small(ui, format!("Damage dealt {:.0}    Kills {}", tw.damage_dealt, tw.kills), DIM);
+        // Targeting.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(RichText::new("Target").size(13.5).color(DIM)).on_hover_text(format!("Which enemy in range this tower shoots at.  {}", hint("T", "Y")));
+            for m in Target::ALL {
+                let on = tw.target == m;
+                let b = egui::Button::new(RichText::new(m.name()).size(13.0).color(if on { GOLD } else { TEXT }))
+                    .fill(if on { Color32::from_rgb(70, 58, 36) } else { STONE })
+                    .stroke(Stroke::new(1.0, alpha(GOLD, if on { 0.9 } else { 0.3 })));
+                if ui.add(b).on_hover_text(m.desc()).clicked() {
+                    g.set_target(sel, m);
+                    *clicked = true;
+                }
+            }
+        });
     }
     if let Kind::Special(_) = tw.kind {
         match g.special_upgrade_cost(sel) {

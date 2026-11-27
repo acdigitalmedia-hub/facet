@@ -241,6 +241,10 @@ const HELP: &[(&str, &str)] = &[
         "Mutators on the title screen add optional rules to a run (their records are kept separately). The Daily Challenge picks the map, difficulty and mutators for the day, and everyone gets the same gem rolls.",
     ),
     (
+        "Targeting",
+        "Select a tower to choose which enemy in range it shoots: First (furthest along, the default), Last, Strongest (most HP left: good against bosses and tough enemies) or Weakest (finishes kills, thins out swarms). T cycles it, or Y on a controller.",
+    ),
+    (
         "Gold",
         "Kills and cleared waves earn gold. Spend it on Gem Quality (better odds of high-quality gems), upgrading special towers, and removing rocks.",
     ),
@@ -254,11 +258,11 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Controls",
-        "Click to place or select. K keep, C combine, U gem quality, X remove rock, L upgrade special, B recipe book. 1/2/3 game speed, Space pause, Esc menu. Camera: WASD/arrows pan, Q/E or right-drag rotate, scroll zoom, middle-drag pan, Home reset view, V top-down. M/N music/sound, F11 fullscreen.",
+        "Click to place or select. Tab / Shift+Tab next / previous tower (the new gems while choosing). K keep, C combine, T targeting, U gem quality, X remove rock, L upgrade special, B recipe book. 1/2/3 game speed, Space pause, Esc menu. Camera: WASD/arrows pan, Q/E or right-drag rotate, scroll zoom, middle-drag pan, Home reset view, V top-down. M/N music/sound, F11 fullscreen.",
     ),
     (
         "Controller",
-        "Left stick moves the cursor. A places or selects, B deselects (or dismisses a tip). X keeps a new gem, removes a selected rock or upgrades a selected special. Y forges when a recipe is ready, otherwise combines. LB/RB jump between towers (the new gems while choosing). D-pad: up gem quality, down top-down view, left/right game speed. Right stick turns the camera, LT/RT zoom, L3 resets the view, R3 pauses. Start opens the menu, Select the recipe book. In menus, move with the stick or D-pad, A to choose, B to go back.",
+        "Left stick moves the cursor. A places or selects, B deselects (or dismisses a tip). X keeps a new gem, removes a selected rock or upgrades a selected special. Y forges when a recipe is ready, otherwise combines (or changes a selected tower's targeting). LB/RB jump between towers (the new gems while choosing). D-pad: up gem quality, down top-down view, left/right game speed. Right stick turns the camera, LT/RT zoom, L3 resets the view, R3 pauses. Start opens the menu, Select the recipe book. In menus, move with the stick or D-pad, A to choose, B to go back.",
     ),
 ];
 

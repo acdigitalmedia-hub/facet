@@ -37,20 +37,22 @@ The in-game **How to Play** page (title screen, or `Esc` → How to Play) explai
 **Saved runs:** leaving a run (Save & Quit, closing the window) saves it, and so does the start
 of every round. Next time the title screen asks whether to continue it.
 
+**Targeting:** select a tower to set what it shoots at: First, Last, Strongest or Weakest.
+
 **Misclicks:** turn on Settings → Click twice to place: the first click marks a cell, the second
 places the gem there.
 
 Difficulties: Normal, Hard, Nightmare; Endless after a win; a daily challenge (same gem rolls for
 everyone that day) and run mutators on the title screen.
 
-Controls: click to place / select · `K` keep · `C` combine · `U` quality · `X` remove rock ·
+Controls: click to place / select · `Tab`/`Shift+Tab` next / previous tower · `T` targeting · `K` keep · `C` combine · `U` quality · `X` remove rock ·
 `L` upgrade special · `B` recipe book · `1`/`2`/`3` speed · `Space` pause · `M`/`N` music/sound ·
 `WASD` or arrows pan · `Q`/`E` or right-drag rotate · scroll zoom · middle-drag pan ·
 `Home` reset view · `V` top-down view · `F11` fullscreen · `Esc` menu.
 
 Controller (Xbox, PlayStation or Steam Deck): left stick moves a cursor over the board ·
 `A` place / select · `B` deselect / back · `X` keep, remove a selected rock or upgrade a selected
-special · `Y` forge (when a recipe is ready) or combine · `LB`/`RB` jump between towers (the new
+special · `Y` forge (when a recipe is ready), combine, or change targeting · `LB`/`RB` jump between towers (the new
 gems while choosing) · D-pad ↑ gem quality, ↓ top-down view, ←/→ game speed · right stick camera ·
 `LT`/`RT` zoom · `L3` reset view · `R3` pause · `Start` menu · `Select` recipe book. In menus the
 stick or D-pad moves the highlight, `A` chooses, `B` goes back. Touching the mouse or trackpad

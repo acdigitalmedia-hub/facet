@@ -74,6 +74,12 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
 - [x] Playtested; released v0.1.2
 
+## 11. Targeting, upcoming waves, Tab (2026-11-26)
+- [x] Per-tower targeting: First / Last / Strongest / Weakest (panel buttons, T, controller Y)
+- [x] Next Wave shows the 4 waves after it (boss / flying tags, details on hover)
+- [x] Tab / Shift+Tab cycle towers (new gems while choosing), shared with LB/RB
+- [ ] Playtest
+
 ## 10. Online leaderboards (planned, not started)
 - [ ] Deterministic runs: all randomness (crits etc.) from the run's own seeded stream, plus a
       move log (placements, keeps, combines, forges, purchases, rock removals)
