@@ -464,6 +464,16 @@ fn main() {
                 }
                 g.events.clear();
             }
+            // FACET3D_PLACE=n: the bot also places n of this round's gems (5 = choosing).
+            if let Some(n) = std::env::var("FACET3D_PLACE").ok().and_then(|v| v.parse::<usize>().ok()) {
+                for _ in 0..n {
+                    if g.phase == Phase::Build {
+                        bot::act(g);
+                    }
+                }
+                g.events.clear();
+                g.selected = g.placed.get(1).copied();
+            }
         }
     }
 

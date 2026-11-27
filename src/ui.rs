@@ -99,6 +99,8 @@ pub struct UiState {
     pub hover: Option<Cell>,
     /// With "click twice to place": the cell marked by the first click.
     pub marked: Option<Cell>,
+    /// A gem in the bottom tray under the pointer (highlighted on the board).
+    pub tray_hover: Option<usize>,
     /// The wave whose start was last autosaved.
     pub autosaved: Option<u32>,
     /// Cached path preview for the hovered cell: (cell, board rev, route or None if blocking).
@@ -130,6 +132,7 @@ impl Default for UiState {
             pointer_over_ui: false,
             hover: None,
             marked: None,
+            tray_hover: None,
             autosaved: None,
             preview: None,
             run_won: false,
@@ -248,6 +251,35 @@ fn gem_icon(p: &egui::Painter, c: Pos2, r: f32, col: Color32, rank: usize, speci
     if rank >= 3 {
         p.circle_filled(c + V2::new(-r * 0.2, -r * 0.25), r * 0.08, Color32::WHITE);
     }
+}
+
+/// Quality pips: one small diamond per quality (Rough … Radiant), filled up to `tier` in that
+/// quality's color. Read left to right: more filled = better.
+pub(crate) fn quality_pips(p: &egui::Painter, center: Pos2, tier: usize, max: usize, size: f32) {
+    let n = max + 1;
+    let gap = size * 1.15;
+    let x0 = center.x - gap * (n as f32 - 1.0) / 2.0;
+    for k in 0..n {
+        let c = Pos2::new(x0 + gap * k as f32, center.y);
+        let pts = vec![c + V2::new(0.0, -size * 0.55), c + V2::new(size * 0.42, 0.0), c + V2::new(0.0, size * 0.55), c + V2::new(-size * 0.42, 0.0)];
+        if k <= tier {
+            p.add(Shape::convex_polygon(pts, tier_rim(tier), Stroke::new(0.8, alpha(Color32::BLACK, 0.7))));
+        } else {
+            p.add(Shape::closed_line(pts, Stroke::new(1.0, alpha(DIM, 0.55))));
+        }
+    }
+}
+
+/// Quality pips plus "Faceted · 3 of 5" as a row in a layout.
+pub(crate) fn quality_row(ui: &mut egui::Ui, g: &Game, tier: usize) {
+    let max = g.bal.max_tier();
+    ui.horizontal(|ui| {
+        let w = 9.0 * 1.15 * (max + 1) as f32;
+        let (r, _) = ui.allocate_exact_size(V2::new(w, 14.0), Sense::hover());
+        quality_pips(ui.painter(), r.center(), tier, max, 9.0);
+        let name = g.bal.tier_names.get(tier).cloned().unwrap_or_default();
+        ui.label(RichText::new(format!("{name} · quality {} of {}", tier + 1, max + 1)).size(13.0).color(tier_rim(tier)));
+    });
 }
 
 pub(crate) fn tower_icon(ui: &mut egui::Ui, g: &Game, t: &Tower, size: f32) {
@@ -523,6 +555,13 @@ pub fn interface(
         Screen::Playing => {
             let view = Rect::from_min_max(screen.min, Pos2::new(screen.max.x - PANEL_W, screen.max.y));
             panel(ctx, &mut sim, &mut st, &mut audio, screen, t, &mut clicked);
+            hud(ctx, &sim, &mut st, view, &mut clicked);
+            let ended = matches!(sim.game.phase, Phase::GameOver | Phase::Victory);
+            if !ended && st.page.is_none() && !st.book {
+                tray(ctx, &mut sim.game, &mut st, view, &mut clicked);
+            } else {
+                st.tray_hover = None;
+            }
             if st.book {
                 book(ctx, &sim.game, view, t, &mut st.book, &mut clicked);
             }
@@ -867,9 +906,11 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
     out
 }
 
+/// The side panel: what's selected, recipes, gem quality, the next wave; the recipe book and
+/// camera at the bottom. The wave / lives / gold card, speed buttons and this round's gems live
+/// on the board view instead (`hud`, `tray`).
 fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audio, screen: Rect, _t: f32, clicked: &mut bool) {
     nav::group(ctx, Group::None);
-    let sim_daily = sim.daily.is_some();
     let g = &mut sim.game;
     let frame = egui::Frame::new().fill(PANEL_BG).inner_margin(Margin::symmetric(18, 14)).stroke(Stroke::new(1.0, alpha(GOLD, 0.35)));
     egui::Area::new("panel".into()).fixed_pos(Pos2::new(screen.max.x - PANEL_W, screen.min.y)).show(ctx, |ui| {
@@ -880,118 +921,54 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
             ui.set_max_width(inner);
             // The body scrolls if it doesn't fit above the bottom block (small screens, big
             // interface sizes).
-            egui::ScrollArea::vertical().max_height((screen.height() - 190.0).max(120.0)).auto_shrink([false, true]).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height((screen.height() - 130.0).max(120.0)).auto_shrink([false, true]).show(ui, |ui| {
             ui.set_max_width(inner);
 
-            // Header.
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("FACET").family(heading()).size(32.0).color(GOLD));
-                ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-                    let mode = format!("{}{}", g.bal.difficulties[g.diff].name, if g.endless { "  ·  Endless" } else { "" });
-                    let mode = if sim_daily { format!("Daily · {mode}") } else { mode };
-                    ui.label(RichText::new(mode).size(14.0).color(diff_color(g.diff)));
-                    ui.label(RichText::new(&g.map.name).size(13.0).color(DIM));
-                    if !g.mutators.is_empty() {
-                        let names: Vec<&str> = g.mutators.iter().map(|m| m.name()).collect();
-                        ui.label(RichText::new(names.join(" · ")).size(12.0).color(INFO))
-                            .on_hover_text(g.mutators.iter().map(|m| format!("{}: {}", m.name(), m.desc())).collect::<Vec<_>>().join("\n"));
-                    }
-                });
-            });
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 18.0;
-                let lives_col = if g.lives <= 5 { BAD } else { TEXT };
-                ui.label(RichText::new(wave_label(g)).family(bold()).size(17.0));
-                ui.label(RichText::new(format!("{} lives", g.lives)).family(bold()).size(17.0).color(lives_col));
-                ui.label(RichText::new(format!("{} gold", g.gold)).family(bold()).size(17.0).color(GOLD));
-            });
-
-            // Phase guidance.
-            let padded = pad::active();
-            let phase_hint = match g.phase {
-                Phase::Build => format!("Place gems ({} left). Each gem is also a wall: shape the maze!", g.bal.gems_per_round - g.placed.len()),
-                Phase::Choose if padded => "Pick one of the new (glowing) gems with the cursor or LB/RB, then X to keep it. The rest turn to rock.".into(),
-                Phase::Choose => "Click one of the new (glowing) gems, then keep it. The rest turn to rock.".into(),
-                Phase::Wave => format!("Wave in progress: {} enemies left", g.creeps.len()),
-                Phase::GameOver => "Defeated.".into(),
-                Phase::Victory => "Victory!".into(),
-            };
-            small(ui, phase_hint, DIM);
-            if g.phase == Phase::Build && st.marked.is_some() && !padded {
-                small(ui, "Click the marked cell again to place the gem there.", GOLD);
-            }
-            if !g.available_recipes().is_empty() {
-                let t = if padded { "A recipe is ready! Select a pink-ringed gem and press Y to forge it." } else { "A recipe is ready! Click a pink-ringed gem to forge it." };
-                small(ui, t, RECIPE);
-            }
-            if matches!(g.phase, Phase::Build | Phase::Choose) {
-                for (r, missing) in g.near_recipes().into_iter().take(2) {
-                    small(ui, format!("Close: {} (need {})", g.bal.specials[r].name, g.ing_name(missing)), alpha(RECIPE, 0.8));
+            match g.selected {
+                Some(sel) => selected(ui, g, sel, &mut st.confirm_rock, clicked),
+                None => {
+                    section(ui, "Selected");
+                    let t = if pad::active() { "Move the cursor onto a tower or rock and press A to see it here." } else { "Click a tower or rock on the board to see it here." };
+                    small(ui, t, DIM);
                 }
             }
 
-            // This round's gems.
-            if matches!(g.phase, Phase::Build | Phase::Choose) {
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    for k in 0..g.bal.gems_per_round {
-                        let (r, _) = ui.allocate_exact_size(V2::splat(46.0), Sense::hover());
-                        ui.painter().rect_filled(r, CornerRadius::same(3), Color32::from_rgb(14, 13, 12));
-                        ui.painter().rect_stroke(r, CornerRadius::same(3), Stroke::new(1.0, alpha(GOLD, 0.3)), StrokeKind::Inside);
-                        match g.placed.get(k).and_then(|&i| g.tower(i)) {
-                            Some(tw) => gem_icon(ui.painter(), r.center(), 19.0, c32(g.color(tw.kind)), tw.rank, false),
-                            None => {
-                                ui.painter().text(r.center(), Align2::CENTER_CENTER, "?", FontId::new(20.0, heading()), DIM);
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Keep / combine.
-            if g.phase == Phase::Choose {
-                ui.add_space(4.0);
-                let sel_fresh = g.selected.filter(|&i| g.tower(i).is_some_and(|t| t.fresh));
-                if button_tip(ui, &format!("Keep selected  {}", hint("K", "X")), sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
-                    g.keep(false);
+            // Recipes: ready to forge, or one ingredient away.
+            let ready: Vec<usize> = g.available_recipes().into_iter().map(|(r, _)| r).collect();
+            let close = if matches!(g.phase, Phase::Build | Phase::Choose) { g.near_recipes().into_iter().take(3).collect() } else { Vec::new() };
+            if !ready.is_empty() || !close.is_empty() {
+                section(ui, "Recipes");
+                for r in &ready {
+                    let how = if pad::active() { "select a pink-ringed gem, then Y" } else { "click a pink-ringed gem" };
+                    small(ui, format!("Ready: {} ({how})", g.bal.specials[*r].name), RECIPE);
                 }
-                let steps = sel_fresh.map_or(0, |i| g.combine_steps(i));
-                let label = match sel_fresh {
-                    Some(i) if steps > 0 => {
-                        let tw = g.tower(i).unwrap();
-                        let what = if steps == 2 { "Four of a kind" } else { "Combine" };
-                        format!("{what} → {}  {}", g.bal.tier_names[tw.rank + steps], hint("C", "Y"))
-                    }
-                    _ => "Combine (needs a matching pair)".into(),
-                };
-                if button_tip(ui, &label, steps > 0, GOLD, clicked, "Two matching new gems (same type and quality) make one gem a quality higher. Four of a kind jumps two.") {
-                    g.keep(true);
+                for (r, missing) in close {
+                    small(ui, format!("Close: {} (need {})", g.bal.specials[r].name, g.ing_name(missing)), alpha(RECIPE, 0.75));
                 }
             }
 
-            if let Some(sel) = g.selected {
-                selected(ui, g, sel, &mut st.confirm_rock, clicked);
-            }
-
-            // Gem quality.
+            // Gem quality: the odds of each quality, worst to best.
             section(ui, "Gem Quality");
             let odds = g.bal.luck_odds[g.luck.min(g.bal.luck_odds.len() - 1)].clone();
             let total: u32 = odds.iter().sum::<u32>().max(1);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Level {}", g.luck + 1)).family(bold()).size(15.0));
-                let (r, _) = ui.allocate_exact_size(V2::new(ui.available_width(), 12.0), Sense::hover());
-                let mut x = r.min.x;
-                for (tier, &o) in odds.iter().enumerate() {
-                    let w = r.width() * o as f32 / total as f32;
-                    if w > 0.0 {
-                        ui.painter().rect_filled(Rect::from_min_size(Pos2::new(x, r.min.y), V2::new(w, 12.0)), CornerRadius::ZERO, tier_rim(tier));
-                    }
-                    x += w;
+            small(ui, format!("Level {} of {} · odds for each gem you place", g.luck + 1, g.bal.luck_odds.len()), DIM);
+            ui.add_space(2.0);
+            let tiers = g.bal.tier_names.len();
+            let colw = ui.available_width() / tiers as f32;
+            let (r, _) = ui.allocate_exact_size(V2::new(ui.available_width(), 54.0), Sense::hover());
+            let p = ui.painter();
+            for (tier, name) in g.bal.tier_names.iter().enumerate() {
+                let x = r.min.x + colw * (tier as f32 + 0.5);
+                let o = odds.get(tier).copied().unwrap_or(0);
+                let on = o > 0;
+                p.text(Pos2::new(x, r.min.y + 7.0), Align2::CENTER_CENTER, name, FontId::proportional(12.5), if on { tier_rim(tier) } else { alpha(tier_rim(tier), 0.4) });
+                quality_pips(p, Pos2::new(x, r.min.y + 24.0), tier, tiers - 1, 9.0);
+                let pct = format!("{}%", o * 100 / total);
+                p.text(Pos2::new(x, r.min.y + 44.0), Align2::CENTER_CENTER, pct, FontId::new(14.0, bold()), if on { TEXT } else { alpha(DIM, 0.5) });
+                if tier > 0 {
+                    p.text(Pos2::new(r.min.x + colw * tier as f32, r.min.y + 7.0), Align2::CENTER_CENTER, "›", FontId::proportional(12.0), alpha(DIM, 0.6));
                 }
-            });
-            let odds_text: Vec<String> =
-                odds.iter().enumerate().filter(|(_, o)| **o > 0).map(|(tier, o)| format!("{} {}%", g.bal.tier_names[tier], o * 100 / total)).collect();
-            small(ui, odds_text.join("   "), DIM);
+            }
             let label = match g.luck_cost() {
                 Some(c) => format!("Upgrade quality ({c} gold)  {}", hint("U", "D-pad ↑")),
                 None => "Quality maxed".into(),
@@ -1026,58 +1003,208 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
         });
     });
 
-    // Bottom of the panel: recipe book and speed controls.
+    // Bottom of the panel: recipe book and camera.
     egui::Area::new("panel_bottom".into())
         .order(egui::Order::Foreground)
-        .fixed_pos(Pos2::new(screen.max.x - PANEL_W + 18.0, screen.max.y - 148.0))
+        .fixed_pos(Pos2::new(screen.max.x - PANEL_W + 18.0, screen.max.y - 104.0))
         .show(ctx, |ui| {
             let inner = PANEL_W - 36.0;
             ui.set_width(inner);
-        // Bottom: recipe book and speed.
-        ui.horizontal(|ui| {
-            let bw = (inner - 6.0) / 2.0;
-            for (label, top, tip) in [
-                (format!("Reset view  {}", hint("Home", "L3")), false, "Back to the default angled view of the whole board."),
-                (format!("Top-down  {}", hint("V", "D-pad ↓")), true, "Look straight down at the board."),
-            ] {
-                let b = egui::Button::new(RichText::new(label).size(14.0)).min_size(V2::new(bw, 28.0));
-                if ui.add(b).on_hover_text(tip).nav_clicked() {
-                    st.cam_request = Some(top);
+            let book_label = format!("{}  {}", if st.book { "Close Recipe Book" } else { "Recipe Book" }, hint("B", "Select"));
+            if button_tip(ui, &book_label, true, RECIPE, clicked, "Every special tower and its ingredients.") {
+                st.book = !st.book;
+            }
+            ui.horizontal(|ui| {
+                let bw = (inner - 6.0) / 2.0;
+                for (label, top, tip) in [
+                    (format!("Reset view  {}", hint("Home", "L3")), false, "Back to the default angled view of the whole board."),
+                    (format!("Top-down  {}", hint("V", "D-pad ↓")), true, "Look straight down at the board."),
+                ] {
+                    let b = egui::Button::new(RichText::new(label).size(14.0)).min_size(V2::new(bw, 28.0));
+                    if ui.add(b).on_hover_text(tip).nav_clicked() {
+                        st.cam_request = Some(top);
+                        *clicked = true;
+                    }
+                }
+            });
+            if pad::active() {
+                small(ui, "Right stick camera · LT/RT zoom · Start menu", DIM);
+            } else {
+                small(ui, "WASD pan · Q/E rotate · scroll zoom · Esc menu", DIM);
+            }
+        });
+}
+
+/// Top of the board view: wave, lives and gold on the left; game speed on the right.
+fn hud(ctx: &egui::Context, sim: &Sim, st: &mut UiState, view: Rect, clicked: &mut bool) {
+    nav::group(ctx, Group::None);
+    let g = &sim.game;
+    let card = egui::Frame::new()
+        .fill(Color32::from_rgba_unmultiplied(12, 11, 10, 215))
+        .inner_margin(Margin::symmetric(12, 7))
+        .stroke(Stroke::new(1.0, alpha(GOLD, 0.35)))
+        .corner_radius(CornerRadius::same(4));
+    egui::Area::new("hud".into()).fixed_pos(view.min + V2::new(12.0, 12.0)).show(ctx, |ui| {
+        card.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 16.0;
+                ui.label(RichText::new(wave_label(g)).family(bold()).size(18.0));
+                let lives_col = if g.lives <= 5 { BAD } else { TEXT };
+                ui.label(RichText::new(format!("{} lives", g.lives)).family(bold()).size(18.0).color(lives_col));
+                ui.label(RichText::new(format!("{} gold", g.gold)).family(bold()).size(18.0).color(GOLD));
+            });
+            let mut mode = format!("{} · {}", g.bal.difficulties[g.diff].name, g.map.name);
+            if g.endless {
+                mode.push_str(" · Endless");
+            }
+            if sim.daily.is_some() {
+                mode = format!("Daily · {mode}");
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(mode).size(13.0).color(diff_color(g.diff)));
+                if !g.mutators.is_empty() {
+                    let names: Vec<&str> = g.mutators.iter().map(|m| m.name()).collect();
+                    ui.label(RichText::new(names.join(" · ")).size(12.5).color(INFO))
+                        .on_hover_text(g.mutators.iter().map(|m| format!("{}: {}", m.name(), m.desc())).collect::<Vec<_>>().join("\n"));
+                }
+            });
+            if g.phase == Phase::Wave {
+                let n = g.creeps.len() as u32 + g.spawn_left();
+                ui.label(RichText::new(format!("{n} {} left", if n == 1 { "enemy" } else { "enemies" })).size(13.0).color(DIM));
+            }
+        });
+    });
+
+    // Speed and pause.
+    egui::Area::new("speed".into()).pivot(Align2::RIGHT_TOP).fixed_pos(Pos2::new(view.max.x - 12.0, view.min.y + 12.0)).show(ctx, |ui| {
+        card.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for (label, sp) in [("1×", 1u32), ("2×", 2), ("4×", 4)] {
+                    let on = st.speed == sp && !st.paused;
+                    let b = egui::Button::new(RichText::new(label).size(15.0).color(if on { GOLD } else { TEXT }))
+                        .min_size(V2::new(40.0, 28.0))
+                        .fill(if on { Color32::from_rgb(70, 58, 36) } else { STONE });
+                    if ui.add(b).on_hover_text(format!("Game speed {label}  {}", hint(&sp.min(3).to_string(), "D-pad ←/→"))).nav_clicked() {
+                        st.speed = sp;
+                        st.paused = false;
+                        *clicked = true;
+                    }
+                }
+                let b = egui::Button::new(RichText::new(if st.paused { "Play" } else { "Pause" }).size(15.0).color(if st.paused { GOLD } else { TEXT }))
+                    .min_size(V2::new(58.0, 28.0))
+                    .fill(if st.paused { Color32::from_rgb(70, 58, 36) } else { STONE });
+                if ui.add(b).on_hover_text(format!("Pause  {}", hint("Space", "R3"))).nav_clicked() {
+                    st.paused = !st.paused;
                     *clicked = true;
                 }
-            }
+            });
         });
-        let book_label = format!("{}  {}", if st.book { "Close Recipe Book" } else { "Recipe Book" }, hint("B", "Select"));
-        if button_tip(ui, &book_label, true, RECIPE, clicked, "Every special tower and its ingredients.") {
-            st.book = !st.book;
-        }
-        ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            let bw = (inner - 3.0 * 6.0) / 4.0;
-            for (label, sp) in [("1×", 1u32), ("2×", 2), ("4×", 4)] {
-                let on = st.speed == sp;
-                let b = egui::Button::new(RichText::new(label).size(15.0).color(if on { GOLD } else { TEXT }))
-                    .min_size(V2::new(bw, 28.0))
-                    .fill(if on { Color32::from_rgb(70, 58, 36) } else { STONE });
-                if ui.add(b).nav_clicked() {
-                    st.speed = sp;
-                    *clicked = true;
+    });
+}
+
+/// Bottom of the board view while placing and choosing: what to do, this round's gems
+/// (click one to select it) and the keep / combine buttons.
+fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked: &mut bool) {
+    st.tray_hover = None;
+    if !matches!(g.phase, Phase::Build | Phase::Choose) {
+        return;
+    }
+    nav::group(ctx, Group::None);
+    let padded = pad::active();
+    let card = egui::Frame::new()
+        .fill(Color32::from_rgba_unmultiplied(12, 11, 10, 225))
+        .inner_margin(Margin::symmetric(14, 9))
+        .stroke(Stroke::new(1.0, alpha(GOLD, 0.4)))
+        .corner_radius(CornerRadius::same(5));
+    egui::Area::new("tray".into()).pivot(Align2::CENTER_BOTTOM).fixed_pos(Pos2::new(view.center().x, view.max.y - 12.0)).show(ctx, |ui| {
+        card.show(ui, |ui| {
+            // What to do now.
+            let hint_text = match g.phase {
+                Phase::Build if g.no_room && g.placed.is_empty() => "No room for new gems. Remove rocks to make space, or start the wave.".to_string(),
+                Phase::Build if st.marked.is_some() && !padded => "Click the marked cell again to place the gem there.".to_string(),
+                Phase::Build => format!("Place {} more gem{}. Each gem is also a wall: shape the maze!", g.bal.gems_per_round - g.placed.len(), if g.bal.gems_per_round - g.placed.len() == 1 { "" } else { "s" }),
+                _ if padded => "Pick a gem (cursor or LB/RB), then X to keep it. The others turn to rock.".to_string(),
+                _ => "Pick a gem (here or on the board), then keep it. The others turn to rock.".to_string(),
+            };
+            let hint_col = if st.marked.is_some() && g.phase == Phase::Build { GOLD } else { TEXT };
+            ui.label(RichText::new(hint_text).size(14.5).color(hint_col));
+            if g.phase == Phase::Choose && !g.available_recipes().is_empty() {
+                let t = if padded { "A recipe is ready: select a pink-ringed gem and press Y to forge it." } else { "A recipe is ready: select a pink-ringed gem to forge it." };
+                ui.label(RichText::new(t).size(13.5).color(RECIPE));
+            }
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for k in 0..g.bal.gems_per_round {
+                    let cell = g.placed.get(k).copied();
+                    let tw = cell.and_then(|i| g.tower(i)).cloned();
+                    let sense = if tw.is_some() { Sense::click() } else { Sense::hover() };
+                    let (r, resp) = ui.allocate_exact_size(V2::new(58.0, 68.0), sense);
+                    let sel = cell.is_some() && g.selected == cell;
+                    let hovered = resp.hovered() && tw.is_some();
+                    let p = ui.painter();
+                    p.rect_filled(r, CornerRadius::same(4), if sel { Color32::from_rgb(52, 44, 30) } else { Color32::from_rgb(16, 15, 13) });
+                    let border = if sel { Stroke::new(2.0, GOLD) } else if hovered { Stroke::new(1.5, alpha(GOLD, 0.8)) } else { Stroke::new(1.0, alpha(GOLD, 0.3)) };
+                    p.rect_stroke(r, CornerRadius::same(4), border, StrokeKind::Inside);
+                    match &tw {
+                        Some(t) => {
+                            gem_icon(p, r.center() - V2::new(0.0, 8.0), 19.0, c32(g.color(t.kind)), t.rank, false);
+                            quality_pips(p, Pos2::new(r.center().x, r.max.y - 10.0), t.rank, g.bal.max_tier(), 8.5);
+                        }
+                        None => {
+                            p.text(r.center(), Align2::CENTER_CENTER, "?", FontId::new(20.0, heading()), DIM);
+                        }
+                    }
+                    if let (Some(i), Some(t)) = (cell, &tw) {
+                        if hovered {
+                            st.tray_hover = Some(i);
+                        }
+                        let s = g.stats(t);
+                        let resp = resp.on_hover_text(format!("{}\nDmg {:.0} · Range {:.1} · {:.1}s{}", g.tower_name(t), s.damage, s.range, s.cooldown, {
+                            let fx = effects_text(&s);
+                            if fx.is_empty() { String::new() } else { format!("\n{fx}") }
+                        }));
+                        if resp.clicked() {
+                            g.selected = Some(i);
+                            *clicked = true;
+                        }
+                    }
                 }
-            }
-            let b = egui::Button::new(RichText::new(if st.paused { "Play" } else { "Pause" }).size(15.0)).min_size(V2::new(bw, 28.0));
-            if ui.add(b).nav_clicked() {
-                st.paused = !st.paused;
-                *clicked = true;
-            }
+                // Keep / combine (choosing), or skip a round with no room.
+                if g.phase == Phase::Choose {
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(190.0);
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        let sel_fresh = g.selected.filter(|&i| g.tower(i).is_some_and(|t| t.fresh));
+                        if button_tip(ui, &format!("Keep  {}", hint("K", "X")), sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
+                            g.keep(false);
+                        }
+                        let steps = sel_fresh.map_or(0, |i| g.combine_steps(i));
+                        let label = match sel_fresh {
+                            Some(i) if steps > 0 => {
+                                let tw = g.tower(i).unwrap();
+                                format!("{} → {}  {}", if steps == 2 { "Four of a kind" } else { "Combine" }, g.bal.tier_names[tw.rank + steps], hint("C", "Y"))
+                            }
+                            _ => "Combine (needs a pair)".into(),
+                        };
+                        if button_tip(ui, &label, steps > 0, GOLD, clicked, "Two matching new gems (same type and quality) make one gem a quality higher. Four of a kind jumps two.") {
+                            g.keep(true);
+                        }
+                    });
+                } else if g.no_room && g.placed.is_empty() {
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(190.0);
+                        if button_tip(ui, "Start the wave", true, GOLD, clicked, "Skip placing gems this round.") {
+                            g.skip_round();
+                        }
+                    });
+                }
+            });
         });
-        if pad::active() {
-            small(ui, "A select · B back · LB/RB towers · ←→ speed", DIM);
-            small(ui, "Right stick camera · LT/RT zoom · R3 pause", DIM);
-        } else {
-            small(ui, "1/2/3 speed · Space pause · Esc menu", DIM);
-            small(ui, "Camera: WASD pan · Q/E rotate · scroll zoom", DIM);
-        }
-        });
+    });
 }
 
 fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<usize>, clicked: &mut bool) {
@@ -1104,6 +1231,9 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
             small(ui, format!("{dmg}    Range {:.1}    {:.1}s", s.range, s.cooldown), TEXT);
         });
     });
+    if let Kind::Gem(_) = tw.kind {
+        quality_row(ui, g, tw.rank);
+    }
     let fx = effects_text(&s);
     if !fx.is_empty() {
         small(ui, fx, INFO);
@@ -1293,9 +1423,11 @@ fn overlay(
     // Boss health bar.
     if let Some(c) = g.creeps.iter().find(|c| c.boss && c.hp > 0.0) {
         let w = view.width() * 0.45;
-        let r = Rect::from_min_size(Pos2::new(cx - w / 2.0, view.min.y + 40.0), V2::new(w, 14.0));
+        // Below the wave card on narrow views (handhelds, big interface sizes).
+        let top = if view.width() < 900.0 { 135.0 } else { 100.0 };
+        let r = Rect::from_min_size(Pos2::new(cx - w / 2.0, view.min.y + top), V2::new(w, 14.0));
         let kind = &g.bal.waves.kinds[c.kind];
-        p.text(Pos2::new(cx, r.min.y - 14.0), Align2::CENTER_CENTER, kind.name.to_uppercase(), FontId::new(18.0, heading()), BAD);
+        p.text(Pos2::new(cx, r.min.y - 6.0), Align2::CENTER_BOTTOM, kind.name.to_uppercase(), FontId::new(18.0, heading()), BAD);
         p.rect_filled(r.expand(2.0), CornerRadius::same(2), alpha(Color32::BLACK, 0.8));
         let f = (c.hp / c.max_hp).clamp(0.0, 1.0);
         p.rect_filled(Rect::from_min_size(r.min, V2::new(w * f, 14.0)), CornerRadius::ZERO, Color32::from_rgb(190, 30, 25));
@@ -1322,13 +1454,14 @@ fn overlay(
         let a = mt.min(1.0);
         let font = FontId::new(17.0, bold());
         let width = ctx.fonts_mut(|f| f.layout_no_wrap(msg.clone(), font.clone(), TEXT).size().x);
-        let y = view.max.y - 60.0;
+        // Above the gem tray while it's showing.
+        let y = view.max.y - if matches!(g.phase, Phase::Build | Phase::Choose) { 150.0 } else { 60.0 };
         p.rect_filled(Rect::from_center_size(Pos2::new(cx, y), V2::new(width + 32.0, 34.0)), CornerRadius::same(3), alpha(Color32::BLACK, 0.7 * a));
         p.text(Pos2::new(cx, y), Align2::CENTER_CENTER, msg, font, alpha(TEXT, a));
     }
 
     if st.paused {
-        p.text(Pos2::new(cx, view.min.y + 110.0), Align2::CENTER_CENTER, "Paused", FontId::new(44.0, heading()), alpha(TEXT, 0.85));
+        p.text(Pos2::new(cx, view.min.y + 160.0), Align2::CENTER_CENTER, "Paused", FontId::new(44.0, heading()), alpha(TEXT, 0.85));
     }
 
     let _ = t;

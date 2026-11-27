@@ -65,6 +65,15 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Saved runs: on leaving, closing the window and each round start; continue prompt at startup
 - [ ] Playtest: endless Leviathan, click twice to place, quit and continue a run
 
+## 9. UI overhaul (2026-11-26)
+- [x] Board view: wave/lives/gold card (top left), speed (top right), gem tray (bottom)
+- [x] Gem tray: this round's gems, click to select (beam on the board while hovered), Keep/Combine
+- [x] Quality pips (1–5 diamonds) on gems in the tray, panel and tooltips; quality ladder
+      worst → best with odds in Gem Quality
+- [x] Side panel: selected, recipes, gem quality, next wave; book and camera at the bottom
+- [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
+- [ ] Playtest the new layout (PC and Deck), then release v0.1.2
+
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
 - [x] Maps + art pass (5 maps)

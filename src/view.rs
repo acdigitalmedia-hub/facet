@@ -1301,6 +1301,17 @@ pub fn overlays(sim: &Sim, st: &crate::ui::UiState, gizmos: &mut Gizmos) {
         }
     }
 
+    // A gem hovered in the bottom tray: a beam over it, to find it on a busy board.
+    if let Some(i) = st.tray_hover {
+        let c = g.cell_of(i);
+        let base = at(c, 0.1);
+        let gold = Color::srgba(1.0, 0.85, 0.4, 0.6 + 0.4 * pulse);
+        gizmos.circle(Isometry3d::new(base, up_rot), 0.6 + 0.08 * pulse, gold);
+        gizmos.line(base + Vec3::Y * 1.2, base + Vec3::Y * 3.2, gold);
+        gizmos.line(base + Vec3::Y * 1.2, base + Vec3::new(0.25, 1.6, 0.0), gold);
+        gizmos.line(base + Vec3::Y * 1.2, base + Vec3::new(-0.25, 1.6, 0.0), gold);
+    }
+
     // A cell marked by the first of two placement clicks: a pulsing gold ghost.
     if let Some(c) = st.marked {
         let y = at(c, 0.1).y;

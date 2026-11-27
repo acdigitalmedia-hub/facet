@@ -15,6 +15,7 @@ pub fn act(g: &mut Game) -> bool {
             }
             match best_spot(g) {
                 Some(c) => g.place(c),
+                None if g.no_room => g.skip_round(),
                 None => return false,
             }
             true

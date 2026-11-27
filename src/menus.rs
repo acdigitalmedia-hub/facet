@@ -218,11 +218,11 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Keeping a gem",
-        "After placing 5 gems, pick ONE to keep: click it, then Keep (K). The other four turn into rocks: still walls, but they don't attack. Rocks can be removed for gold between waves.",
+        "After placing 5 gems, pick ONE to keep: click it on the board or in the tray at the bottom of the screen, then Keep (K). The other four turn into rocks: still walls, but they don't attack. Rocks can be removed for gold between waves. If the board ever runs out of room, you choose from the gems you managed to place (or skip the round when none fit).",
     ),
     (
         "Combining",
-        "If two of the new gems match (same type and quality), Combine (C) keeps one of them a quality higher. Four of a kind jumps two qualities. Qualities: Rough, Cut, Faceted, Brilliant, Radiant.",
+        "If two of the new gems match (same type and quality), Combine (C) keeps one of them a quality higher. Four of a kind jumps two qualities. Qualities, worst to best: Rough, Cut, Faceted, Brilliant, Radiant. The diamonds under a gem show its quality: one filled for Rough up to all five for Radiant.",
     ),
     (
         "Special towers",
@@ -246,7 +246,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Flyers and bosses",
-        "Flyers ignore the maze and fly straight between checkpoints (shown as a dashed line), so keep some damage near that line. Bosses are slow and very tough, and some have special abilities: check the Next Wave panel.",
+        "Flyers ignore the maze and fly straight between checkpoints (shown as a dashed line), so keep some damage near that line. Bosses are slow and very tough, and some have special abilities: check Next Wave in the side panel.",
     ),
     (
         "Gems",
@@ -373,7 +373,7 @@ const TIPS: &[Tip] = &[
     },
     Tip {
         id: "boss",
-        text: "A boss is next! Bosses are very tough and cost several lives if they escape. Check the Next Wave panel for its abilities.",
+        text: "A boss is next! Bosses are very tough and cost several lives if they escape. Check Next Wave in the side panel for its abilities.",
         when: |g| g.phase != Phase::Wave && g.wave_info(g.wave).boss,
     },
     Tip {
@@ -396,7 +396,7 @@ pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, dismiss
         return true;
     }
     let mut changed = false;
-    egui::Area::new("tip".into()).order(egui::Order::Foreground).fixed_pos(view.min + V2::new(16.0, 16.0)).show(ctx, |ui| {
+    egui::Area::new("tip".into()).order(egui::Order::Foreground).fixed_pos(view.min + V2::new(12.0, 96.0)).show(ctx, |ui| {
         egui::Frame::new()
             .fill(Color32::from_rgba_unmultiplied(14, 12, 10, 235))
             .inner_margin(Margin::same(12))
@@ -466,9 +466,18 @@ pub fn board_tooltip(ctx: &egui::Context, g: &Game, cell: (i32, i32), pos: Pos2)
             .corner_radius(CornerRadius::same(3))
             .show(ui, |ui| {
                 ui.set_max_width(280.0);
-                for (text, col, is_bold) in lines {
+                let quality = match &g.grid[i] {
+                    Occ::Tower(t) if matches!(t.kind, Kind::Gem(_)) => Some(t.rank),
+                    _ => None,
+                };
+                for (k, (text, col, is_bold)) in lines.into_iter().enumerate() {
                     let r = RichText::new(text).size(if is_bold { 15.0 } else { 13.5 }).color(col);
                     ui.label(if is_bold { r.family(bold()) } else { r });
+                    if k == 0
+                        && let Some(q) = quality
+                    {
+                        crate::ui::quality_row(ui, g, q);
+                    }
                 }
             });
     });

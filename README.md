@@ -103,7 +103,7 @@ runs the rules tests and a headless bot through 6 games as a balance check
 (`MAP=n`, `DIFF=0|1|2`, `TRACE=1`, `ENDLESS=1`).
 
 Debug helpers (debug runs never write records): `FACET3D_MAP=n`, `FACET3D_PLAY=difficulty`
-(skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave),
+(skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave, `FACET3D_PLACE=n` places n gems),
 `FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder),
 `FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PADLOG=1` (print controller buttons), `FACET3D_FAKE_VERSION=0.0.1` (pretend to be old, to test
 updating; `FACET3D_UPDATE=1` also installs without asking), `FACET3D_NOUPDATE=1` (skip the check), `FACET3D_RUNSAVE=1` (debug runs normally leave the saved

@@ -320,6 +320,9 @@ pub struct Game {
     spawn_left: u32,
     spawn_t: f32,
     next_id: u64,
+    /// Build phase only: no empty cell can take a gem (see [`Game::skip_round`]).
+    #[serde(default)]
+    pub no_room: bool,
 }
 
 fn placeholder_balance() -> Balance {
@@ -373,6 +376,7 @@ impl Game {
             spawn_left: 0,
             spawn_t: 0.0,
             next_id: 1,
+            no_room: false,
             bal,
         };
         g.route = g.route_with(None).expect("waypoints must be connected on an empty map");
@@ -541,6 +545,37 @@ impl Game {
     fn board_changed(&mut self) {
         self.route = self.route_with(None).expect("route must stay open");
         self.rev += 1;
+        self.update_room();
+    }
+
+    /// Enemies of the current wave still to come.
+    pub fn spawn_left(&self) -> u32 {
+        self.spawn_left
+    }
+
+    /// Is there any cell left that can take a gem?
+    pub fn any_placeable(&self) -> bool {
+        (0..self.grid.len()).any(|i| matches!(self.grid[i], Occ::Empty) && self.can_place(self.cell_of(i)).is_ok())
+    }
+
+    /// Re-checks [`Game::no_room`]. A round that runs out of room part way goes straight to
+    /// choosing from the gems already placed.
+    fn update_room(&mut self) {
+        self.no_room = self.phase == Phase::Build && !self.any_placeable();
+        if self.no_room && !self.placed.is_empty() {
+            self.no_room = false;
+            self.phase = Phase::Choose;
+            self.selected = None;
+            self.flash("No room left: choose from the gems you placed");
+        }
+    }
+
+    /// With no room for any gem this round: skip placing and start the wave.
+    pub fn skip_round(&mut self) {
+        if self.phase == Phase::Build && self.no_room && self.placed.is_empty() {
+            self.no_room = false;
+            self.start_wave();
+        }
     }
 
     // ---- Build phase ----
@@ -966,6 +1001,7 @@ impl Game {
             self.endless = true;
             self.phase = Phase::Build;
             self.flash("Endless mode: how far can you go?");
+            self.update_room();
         }
     }
 
@@ -1246,6 +1282,7 @@ impl Game {
                 self.events.push(Event::WaveClear);
                 self.phase = Phase::Build;
                 self.flash(format!("Wave cleared! +{} gold", self.bal.waves.wave_bonus));
+                self.update_room();
             }
             for o in &mut self.grid {
                 if let Occ::Tower(t) = o {
@@ -1374,6 +1411,44 @@ mod tests {
 
     /// Tests that seed the global RNG take turns.
     static SEEDED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A board with no room left: a round in progress goes to choosing; with nothing placed
+    /// the round can be skipped.
+    #[test]
+    fn full_board() {
+        let (bal, _) = Balance::load();
+        let map = MapDef::load_all().0.swap_remove(0);
+        let mut g = Game::new(bal, map, 0);
+        // Fill every cell that can take a wall with rock, keeping the route open.
+        for i in 0..g.grid.len() {
+            if g.can_place(g.cell_of(i)).is_ok() {
+                g.grid[i] = Occ::Rock;
+            }
+        }
+        g.board_changed();
+        assert!(g.no_room && g.phase == Phase::Build);
+        g.skip_round();
+        assert_eq!(g.phase, Phase::Wave);
+
+        // Room for exactly one gem: placing it moves on to choosing.
+        let (bal, _) = Balance::load();
+        let mut g = Game::new(bal, MapDef::load_all().0.swap_remove(0), 0);
+        let mut last = None;
+        for i in 0..g.grid.len() {
+            if g.can_place(g.cell_of(i)).is_ok() {
+                if let Some(j) = last {
+                    g.grid[j] = Occ::Rock;
+                }
+                last = Some(i);
+            }
+        }
+        g.board_changed();
+        assert!(!g.no_room);
+        let c = g.cell_of(last.unwrap());
+        g.place(c);
+        assert_eq!(g.phase, Phase::Choose);
+        assert_eq!(g.placed.len(), 1);
+    }
 
     /// A run saved mid-wave and loaded again plays on exactly like the original.
     #[test]
