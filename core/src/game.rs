@@ -30,12 +30,14 @@ const BURN_DURATION: f32 = 3.0;
 pub const BURN_RADIUS: f32 = 0.8;
 /// Seconds without being hit before a shield starts recharging.
 const SHIELD_DELAY: f32 = 2.5;
+/// Regenerating bosses only heal after this long without taking damage (poison counts).
+pub const REGEN_DELAY: f32 = 2.0;
 /// Sprint cycle: seconds between sprints, and sprint length.
 const SPRINT_PERIOD: f32 = 4.0;
 const SPRINT_TIME: f32 = 1.2;
 
 /// Optional rules that change a run.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Mutator {
     /// Flying waves have twice as many enemies.
     DoubleFlyers,
@@ -78,6 +80,7 @@ impl Mutator {
 }
 
 /// A patch of burning ground.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Patch {
     pub pos: Vec2,
     pub dps: f32,
@@ -85,7 +88,7 @@ pub struct Patch {
     pub src: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Phase {
     /// Placing this round's gems.
     Build,
@@ -120,13 +123,13 @@ pub enum Event {
     RockRemoved { pos: Vec2 },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Kind {
     Gem(usize),
     Special(usize),
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Tower {
     pub kind: Kind,
     /// Tier for gems, upgrade level for specials (both 0-based).
@@ -152,7 +155,7 @@ impl Tower {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Occ {
     Empty,
     Rock,
@@ -181,6 +184,7 @@ pub struct Stats {
     pub bounty: f32,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Creep {
     pub id: u64,
     pub kind: usize,
@@ -236,6 +240,7 @@ impl Creep {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Projectile {
     pub pos: Vec2,
     pub vel: Vec2,
@@ -271,7 +276,11 @@ pub struct WaveInfo {
     pub desc: String,
 }
 
+/// Serializable for saved runs. The balance isn't saved: [`Game::rebind`] puts the current one
+/// back (and checks the saved run still fits it). Effects and pending events aren't saved.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Game {
+    #[serde(skip, default = "placeholder_balance")]
     pub bal: Balance,
     pub map: MapDef,
     /// Index into `bal.difficulties`.
@@ -283,6 +292,7 @@ pub struct Game {
     pub route: Vec<Cell>,
     pub creeps: Vec<Creep>,
     pub projectiles: Vec<Projectile>,
+    #[serde(skip)]
     pub fx: Vec<Fx>,
     pub lives: i32,
     pub gold: u32,
@@ -294,20 +304,26 @@ pub struct Game {
     /// Selected cell (a tower or a rock).
     pub selected: Option<usize>,
     pub total_kills: u32,
+    #[serde(skip)]
     pub message: Option<(String, f32)>,
     /// Bumped whenever the board layout changes.
     pub rev: u64,
     /// Events since the last drain (sound/visual effects).
+    #[serde(skip)]
     pub events: Vec<Event>,
     /// Burning ground.
     pub patches: Vec<Patch>,
     pub mutators: Vec<Mutator>,
-    /// Seeded runs (daily challenge): gem rolls come from this separate stream, so every
-    /// player gets the same gems in the same order.
+    /// Gem rolls come from this stream (part of a saved run, so quitting and resuming can't
+    /// re-roll anything). Seeded runs (daily challenge) give every player the same gems.
     roll_state: Option<u64>,
     spawn_left: u32,
     spawn_t: f32,
     next_id: u64,
+}
+
+fn placeholder_balance() -> Balance {
+    Balance::load().0
 }
 
 pub fn rgb(c: [u8; 3]) -> Color {
@@ -353,7 +369,7 @@ impl Game {
             events: Vec::new(),
             patches: Vec::new(),
             mutators,
-            roll_state: seed.map(|s| s.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1),
+            roll_state: Some(seed.unwrap_or_else(|| rand::gen_range(1u32, u32::MAX) as u64 * 0x1_0000_0001).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1),
             spawn_left: 0,
             spawn_t: 0.0,
             next_id: 1,
@@ -419,6 +435,33 @@ impl Game {
 
     pub fn flash(&mut self, msg: impl Into<String>) {
         self.message = Some((msg.into(), 2.5));
+    }
+
+    /// After loading a saved run: attach the current balance and check that everything in the
+    /// run still exists in it (a newer version might have removed something).
+    pub fn rebind(&mut self, bal: Balance) -> Result<(), String> {
+        let max = bal.max_tier();
+        for o in &self.grid {
+            if let Occ::Tower(t) = o {
+                let ok = match t.kind {
+                    Kind::Gem(g) => g < bal.gems.len() && t.rank <= max,
+                    Kind::Special(s) => s < bal.specials.len(),
+                };
+                if !ok {
+                    return Err("a tower in the saved run no longer exists".into());
+                }
+            }
+        }
+        if self.creeps.iter().any(|c| c.kind >= bal.waves.kinds.len()) || self.diff >= bal.difficulties.len() {
+            return Err("the saved run doesn't fit this version".into());
+        }
+        if self.grid.len() != (self.map.w * self.map.h) as usize {
+            return Err("the saved map is damaged".into());
+        }
+        self.bal = bal;
+        self.route = self.route_with(None).ok_or("the saved maze is blocked")?;
+        self.rev += 1;
+        Ok(())
     }
 
     // ---- Tower info ----
@@ -1020,7 +1063,7 @@ impl Game {
                 }
             }
             c.flash = (c.flash - dt).max(0.0);
-            if c.regen > 0.0 {
+            if c.regen > 0.0 && c.since_hit > REGEN_DELAY && c.poison_t <= 0.0 {
                 c.hp = (c.hp + c.regen * c.max_hp * dt).min(c.max_hp);
             }
             if c.slow_t > 0.0 {
@@ -1329,6 +1372,40 @@ impl Game {
 mod tests {
     use super::*;
 
+    /// Tests that seed the global RNG take turns.
+    static SEEDED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A run saved mid-wave and loaded again plays on exactly like the original.
+    #[test]
+    fn save_and_resume() {
+        let _turn = SEEDED.lock().unwrap_or_else(|e| e.into_inner());
+        let (bal, _) = Balance::load();
+        let map = MapDef::load_all().0.swap_remove(0);
+        let mut g = Game::with_options(bal.clone(), map, 0, Vec::new(), Some(42));
+        // Play with the bot until a few waves in and mid-wave.
+        while !(g.wave >= 3 && g.phase == Phase::Wave && g.creeps.len() > 2) {
+            if g.phase == Phase::Wave {
+                g.step();
+            } else {
+                crate::bot::act(&mut g);
+            }
+            g.events.clear();
+        }
+        let text = serde_json::to_string(&g).unwrap();
+        let mut h: Game = serde_json::from_str(&text).unwrap();
+        h.rebind(bal).unwrap();
+        // The simulation is deterministic apart from the global RNG (crits etc.): seed both alike.
+        for _ in 0..600 {
+            rand::srand(7);
+            g.step();
+            rand::srand(7);
+            h.step();
+        }
+        assert_eq!((g.lives, g.gold, g.creeps.len(), g.wave), (h.lives, h.gold, h.creeps.len(), h.wave));
+        // The gem rolls continue from the same point too.
+        assert_eq!(g.roll(1000), h.roll(1000));
+    }
+
     /// Greedy bot: each gem goes where it lengthens the route most; forges any recipe it
     /// can, otherwise keeps the strongest gem. Spends gold on quality, then specials.
     fn play(seed: u64) -> (u32, i32, usize) {
@@ -1416,6 +1493,7 @@ mod tests {
 
     #[test]
     fn bot_runs() {
+        let _turn = SEEDED.lock().unwrap_or_else(|e| e.into_inner());
         for seed in 1..=6 {
             let (w, l, f) = play(seed);
             println!("seed {seed}: reached wave {} with {l} lives, forged {f}", w + 1);

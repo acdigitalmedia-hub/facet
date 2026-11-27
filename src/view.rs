@@ -1301,6 +1301,20 @@ pub fn overlays(sim: &Sim, st: &crate::ui::UiState, gizmos: &mut Gizmos) {
         }
     }
 
+    // A cell marked by the first of two placement clicks: a pulsing gold ghost.
+    if let Some(c) = st.marked {
+        let y = at(c, 0.1).y;
+        let (x, z) = (c.0 as f32, c.1 as f32);
+        let gold = Color::srgba(1.0, 0.82, 0.35, 0.65 + 0.35 * pulse);
+        let h = 0.25 + 0.2 * pulse;
+        let corners = [(x + 0.1, z + 0.1), (x + 0.9, z + 0.1), (x + 0.9, z + 0.9), (x + 0.1, z + 0.9)];
+        for k in 0..4 {
+            let (a, b) = (corners[k], corners[(k + 1) % 4]);
+            gizmos.line(Vec3::new(a.0, y, a.1), Vec3::new(b.0, y, b.1), gold);
+            gizmos.line(Vec3::new(a.0, y, a.1), Vec3::new(x + 0.5, y + h + 0.35, z + 0.5), gold.with_alpha(0.5));
+        }
+    }
+
     // Hovered cell and path preview.
     if let Some(c) = st.hover {
         let y = at(c, 0.1).y;

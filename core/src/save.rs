@@ -44,6 +44,8 @@ pub struct Settings {
     pub ui_scale: f32,
     /// Look for a new release at startup.
     pub check_updates: bool,
+    /// Mouse: the first click marks a cell, a second click on it places the gem (no misclicks).
+    pub confirm_place: bool,
 }
 
 impl Default for Settings {
@@ -59,6 +61,7 @@ impl Default for Settings {
             seen_tips: Vec::new(),
             ui_scale: 1.0,
             check_updates: true,
+            confirm_place: false,
         }
     }
 }

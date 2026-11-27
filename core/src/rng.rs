@@ -1,6 +1,6 @@
 //! Small global PRNG (xorshift64*) so the simulation doesn't depend on a graphics library.
-//! Seedable for reproducible bot runs (tests that seed it must not run in parallel with
-//! other seeded tests; `bot_runs` is the only one).
+//! Seedable for reproducible bot runs (tests that seed it take turns through a lock in
+//! `game::tests`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

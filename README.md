@@ -34,6 +34,12 @@ The in-game **How to Play** page (title screen, or `Esc` → How to Play) explai
   enemies are invisible, heal, shield, sprint or split.
 - **Gold:** raise gem quality, upgrade specials, or remove rocks to rework the maze.
 
+**Saved runs:** leaving a run (Save & Quit, closing the window) saves it, and so does the start
+of every round. Next time the title screen asks whether to continue it.
+
+**Misclicks:** turn on Settings → Click twice to place: the first click marks a cell, the second
+places the gem there.
+
 Difficulties: Normal, Hard, Nightmare; Endless after a win; a daily challenge (same gem rolls for
 everyone that day) and run mutators on the title screen.
 
@@ -100,7 +106,8 @@ Debug helpers (debug runs never write records): `FACET3D_MAP=n`, `FACET3D_PLAY=d
 (skip the title), `FACET3D_WAVE=n` (bot fast-forwards to wave n; `FACET3D_INTO=1` stops mid-wave),
 `FACET3D_BOOK=1`, `FACET3D_EDITOR=1`, `FACET_ASSETS=path` (assets folder),
 `FACET3D_SIZE=1280x800` (window size), `FACET3D_UISCALE=1.3`, `FACET3D_PADLOG=1` (print controller buttons), `FACET3D_FAKE_VERSION=0.0.1` (pretend to be old, to test
-updating; `FACET3D_UPDATE=1` also installs without asking), `FACET3D_NOUPDATE=1` (skip the check), `FACET3D_UPDATE_API=url` (read the release JSON from elsewhere), `FACET3D_PAD=1` (controller hints
+updating; `FACET3D_UPDATE=1` also installs without asking), `FACET3D_NOUPDATE=1` (skip the check), `FACET3D_RUNSAVE=1` (debug runs normally leave the saved
+run alone; this lets them save and load it), `FACET3D_RESUME=1` (continue the saved run at once), `FACET3D_UPDATE_API=url` (read the release JSON from elsewhere), `FACET3D_PAD=1` (controller hints
 without a controller), `FACET3D_NOUI=1` (hide the interface), `FACET3D_SHOT=out.png` (save a
 screenshot of the game window after `FACET3D_SHOT_AT` seconds, default 6, then quit).
 

@@ -97,6 +97,10 @@ pub struct UiState {
     /// The pointer was over the interface last frame (so board clicks are ignored).
     pub pointer_over_ui: bool,
     pub hover: Option<Cell>,
+    /// With "click twice to place": the cell marked by the first click.
+    pub marked: Option<Cell>,
+    /// The wave whose start was last autosaved.
+    pub autosaved: Option<u32>,
     /// Cached path preview for the hovered cell: (cell, board rev, route or None if blocking).
     pub preview: Option<(Cell, u64, Option<Vec<Cell>>)>,
     pub run_won: bool,
@@ -125,6 +129,8 @@ impl Default for UiState {
             vignette: 0.0,
             pointer_over_ui: false,
             hover: None,
+            marked: None,
+            autosaved: None,
             preview: None,
             run_won: false,
             run_ended: false,
@@ -373,6 +379,8 @@ pub struct UiOut {
     pub daily: bool,
     pub editor: bool,
     pub select_map: Option<usize>,
+    pub resume: bool,
+    pub quit: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -391,14 +399,27 @@ fn settings_page(ctx: &egui::Context, area: Rect, sim: &mut Sim, clicked: &mut b
 
 /// Records an unfinished run (so quitting still counts), then restarts / quits / goes endless.
 pub fn handle_request(sim: &mut Sim, st: &mut UiState, r: Request) {
-    if matches!(r, Request::Restart | Request::Quit) {
+    // Leaving a run saves it to continue later; restarting ends it (counted as unfinished).
+    let saves = crate::run::enabled(sim.debug) && sim.test_map.is_none() && crate::run::resumable(&sim.game);
+    let leaving = matches!(r, Request::Quit | Request::Exit);
+    if leaving && saves {
+        sim.save_run(st.run_won);
+    } else if matches!(r, Request::Restart | Request::Quit | Request::Exit) {
         let key = sim.run_key();
         let Sim { game: g, save, .. } = sim;
         if !sim.debug && sim.test_map.is_none() && !st.run_ended && !st.run_won && (g.wave > 0 || g.phase == Phase::Wave) {
             save.record_end(&key, g.wave, false);
         }
+        if r == Request::Restart && sim.test_map.is_none() {
+            sim.forget_saved_run();
+        }
     }
     match r {
+        Request::Exit => {
+            // Already saved above; just quit.
+            sim.screen = Screen::Title;
+            sim.quit = true;
+        }
         Request::Endless => {
             sim.game.continue_endless();
             st.page = None;
@@ -459,6 +480,30 @@ pub fn interface(
                 st.reset_run();
             } else if out.editor && st.page.is_none() {
                 sim.open_editor();
+            } else if out.quit && st.page.is_none() {
+                sim.quit = true;
+            }
+            // Debug: FACET3D_RESUME=1 continues the saved run straight away.
+            let mut resume = (out.resume || (sim.resume_prompt && std::env::var_os("FACET3D_RESUME").is_some())) && st.page.is_none();
+            // At startup, ask about a run left unfinished.
+            if sim.resume_prompt && st.page.is_none() {
+                match sim.saved.clone() {
+                    Some(s) => match menus::resume_prompt(ctx, screen, &s, &mut clicked) {
+                        Some(menus::ResumeChoice::Continue) => resume = true,
+                        Some(menus::ResumeChoice::NewRun) => {
+                            sim.discard_saved_run();
+                            sim.resume_prompt = false;
+                        }
+                        Some(menus::ResumeChoice::Later) => sim.resume_prompt = false,
+                        None => {}
+                    },
+                    None => sim.resume_prompt = false,
+                }
+            }
+            if resume && let Err(e) = sim.resume_saved(&mut st) {
+                sim.data_err = Some(format!("Couldn't continue the saved run: {e}"));
+                sim.forget_saved_run();
+                sim.resume_prompt = false;
             }
             match st.page {
                 Some(Page::Settings) => {
@@ -530,7 +575,7 @@ pub fn interface(
             }
             match st.page {
                 Some(Page::Pause) => {
-                    if let Some(r) = menus::pause(ctx, view, &mut st.page, &mut clicked) {
+                    if let Some(r) = menus::pause(ctx, view, &mut st.page, crate::run::enabled(sim.debug) && sim.test_map.is_none(), &mut clicked) {
                         req = Some(r);
                     }
                 }
@@ -750,13 +795,28 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         // Settings and help.
         let bw = 150.0;
         let by = screen.max.y - pick(92.0, 68.0);
-        for (k, (label, page)) in [("Settings", Some(Page::Settings)), ("How to Play", Some(Page::Help)), ("Map Editor", None)].into_iter().enumerate() {
-            let r = Rect::from_min_size(Pos2::new(cx - 1.5 * bw - 12.0 + k as f32 * (bw + 12.0), by), V2::new(bw, 34.0));
-            let resp = ui.put(r, egui::Button::new(RichText::new(label).family(heading()).size(17.0)));
+        let mut buttons: Vec<(&str, u8)> = vec![("Settings", 1), ("How to Play", 2), ("Map Editor", 3), ("Quit", 4)];
+        if sim.saved.is_some() {
+            buttons.insert(0, ("Continue Run", 0));
+        }
+        let n = buttons.len() as f32;
+        let x0 = cx - (n * bw + (n - 1.0) * 12.0) / 2.0;
+        for (k, (label, what)) in buttons.into_iter().enumerate() {
+            let r = Rect::from_min_size(Pos2::new(x0 + k as f32 * (bw + 12.0), by), V2::new(bw, 34.0));
+            let text = RichText::new(label).family(heading()).size(17.0);
+            let mut resp = ui.put(r, egui::Button::new(if what == 0 { text.color(GOLD) } else { text }));
+            if what == 0
+                && let Some(s) = &sim.saved
+            {
+                resp = resp.on_hover_text(format!("{}\n{}", s.title, s.detail));
+            }
             if resp.nav_clicked() {
-                match page {
-                    Some(p) => st.page = Some(p),
-                    None => out.editor = true,
+                match what {
+                    0 => out.resume = true,
+                    1 => st.page = Some(Page::Settings),
+                    2 => st.page = Some(Page::Help),
+                    3 => out.editor = true,
+                    _ => out.quit = true,
                 }
                 *clicked = true;
             }
@@ -857,6 +917,9 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 Phase::Victory => "Victory!".into(),
             };
             small(ui, phase_hint, DIM);
+            if g.phase == Phase::Build && st.marked.is_some() && !padded {
+                small(ui, "Click the marked cell again to place the gem there.", GOLD);
+            }
             if !g.available_recipes().is_empty() {
                 let t = if padded { "A recipe is ready! Select a pink-ringed gem and press Y to forge it." } else { "A recipe is ready! Click a pink-ringed gem to forge it." };
                 small(ui, t, RECIPE);

@@ -13,6 +13,7 @@ mod menus;
 mod mesh;
 mod nav;
 mod pad;
+mod run;
 mod terrain;
 mod theme;
 mod ui;
@@ -76,6 +77,12 @@ pub struct Sim {
     pub test_map: Option<MapDef>,
     /// Started with debug environment variables: never write records.
     pub debug: bool,
+    /// A saved run waiting on the title screen.
+    pub saved: Option<run::Summary>,
+    /// Ask about the saved run (once, at startup).
+    pub resume_prompt: bool,
+    /// Quit the game at the end of this frame.
+    pub quit: bool,
 }
 
 impl Sim {
@@ -136,6 +143,7 @@ impl Sim {
     }
 
     pub fn start(&mut self, map: usize, diff: usize) {
+        self.discard_saved_run();
         Self::seed();
         self.test_map = None;
         self.map = map;
@@ -148,6 +156,7 @@ impl Sim {
 
     /// Today's daily challenge.
     pub fn start_daily(&mut self) {
+        self.discard_saved_run();
         Self::seed();
         self.test_map = None;
         let d = Daily::today(&self.maps, self.bal.difficulties.len());
@@ -173,6 +182,60 @@ impl Sim {
     }
 
     /// The records key for the run in progress.
+    /// Saves the run in progress (see `run`). Not for editor playtests or finished games.
+    pub fn save_run(&mut self, won: bool) {
+        if !run::enabled(self.debug) || self.screen != Screen::Playing || self.test_map.is_some() || !run::resumable(&self.game) {
+            return;
+        }
+        run::store(env!("CARGO_PKG_VERSION"), &self.run_key(), won, &self.daily, &self.game);
+        let names: Vec<String> = self.bal.difficulties.iter().map(|d| d.name.clone()).collect();
+        self.saved = run::load().map(|s| run::summary(&s, &names));
+    }
+
+    /// Drops the saved run, counting it in the records as an unfinished run.
+    pub fn discard_saved_run(&mut self) {
+        if !run::enabled(self.debug) {
+            return;
+        }
+        if let Some(s) = run::load()
+            && !self.debug
+            && (s.game.wave > 0 || s.game.phase == Phase::Wave)
+        {
+            self.save.record_end(&s.key, s.game.wave, s.won);
+        }
+        run::delete();
+        self.saved = None;
+    }
+
+    /// Removes the saved run without recording anything (the run ended normally).
+    pub fn forget_saved_run(&mut self) {
+        if run::enabled(self.debug) && self.saved.is_some() {
+            run::delete();
+            self.saved = None;
+        }
+    }
+
+    /// Continues the saved run.
+    pub fn resume_saved(&mut self, st: &mut UiState) -> Result<(), String> {
+        let s = run::load().ok_or("the saved run couldn't be read")?;
+        let mut game = s.game;
+        game.rebind(self.bal.clone())?;
+        self.test_map = None;
+        if let Some(i) = self.maps.iter().position(|m| m.name == game.map.name) {
+            self.map = i;
+        }
+        self.game = game;
+        self.daily = s.daily;
+        self.screen = Screen::Playing;
+        self.acc = 0.0;
+        self.pending = true;
+        self.resume_prompt = false;
+        st.reset_run();
+        st.run_won = s.won;
+        st.autosaved = Some(self.game.wave);
+        Ok(())
+    }
+
     pub fn run_key(&self) -> String {
         match &self.daily {
             Some(d) => d.key(),
@@ -182,7 +245,7 @@ impl Sim {
 }
 
 /// The daily challenge: the same map, difficulty, mutators and gem rolls for everyone on a date.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Daily {
     pub date: String,
     pub seed: u64,
@@ -353,7 +416,18 @@ fn main() {
         daily: None,
         editor: None,
         test_map: None,
+        saved: None,
+        resume_prompt: false,
+        quit: false,
     };
+    // A run left unfinished last time: offer to continue it.
+    if run::enabled(sim.debug)
+        && let Some(s) = run::load()
+    {
+        let names: Vec<String> = sim.bal.difficulties.iter().map(|d| d.name.clone()).collect();
+        sim.saved = Some(run::summary(&s, &names));
+        sim.resume_prompt = true;
+    }
     sim.demo();
     // Steam sets SteamDeck=1 on the Deck: start fullscreen there.
     if std::env::var("SteamDeck").is_ok_and(|v| v == "1") {
@@ -443,7 +517,7 @@ fn main() {
             (keys, pad::gamepad, apply_settings, rebuild, drive, events, sync_scene, view::animate, creatures::corpses, atmosphere::update, atmosphere::light_shift, camera, viewport, hover, view::path_dots, draw_overlays, audio::flush).chain(),
         )
         .add_systems(EguiPrimaryContextPass, ui::interface)
-        .add_systems(Last, (debug_shot, pad::pad_log))
+        .add_systems(Last, (debug_shot, pad::pad_log, quit_request, save_on_exit).chain())
         .run();
 }
 
@@ -728,16 +802,39 @@ fn events(mut sim: ResMut<Sim>, mut st: ResMut<UiState>, mut audio: ResMut<Audio
     }
     let key = sim.run_key();
     let Sim { game: g, save, .. } = &mut *sim;
-    if debug {
-        return;
+    if !debug {
+        if g.phase == Phase::Victory && !st.run_won {
+            st.run_won = true;
+            st.new_best = save.record_win(&key, g.lives, g.wave);
+        }
+        if g.phase == Phase::GameOver && !st.run_ended {
+            st.run_ended = true;
+            st.new_best = save.record_end(&key, g.wave, st.run_won);
+        }
     }
-    if g.phase == Phase::Victory && !st.run_won {
-        st.run_won = true;
-        st.new_best = save.record_win(&key, g.lives, g.wave);
+    // Saved runs: save at the start of every round; drop the save once the run is over.
+    let (resumable, round_start, wave) = (run::resumable(g), g.phase == Phase::Build && g.placed.is_empty() && g.wave > 0, g.wave);
+    if !resumable {
+        sim.forget_saved_run();
+    } else if round_start && st.autosaved != Some(wave) {
+        st.autosaved = Some(wave);
+        sim.save_run(st.run_won);
     }
-    if g.phase == Phase::GameOver && !st.run_ended {
-        st.run_ended = true;
-        st.new_best = save.record_end(&key, g.wave, st.run_won);
+}
+
+/// "Quit Game": save a run in progress, then exit.
+fn quit_request(mut writer: MessageWriter<AppExit>, mut sim: ResMut<Sim>, st: Res<UiState>) {
+    if sim.quit {
+        sim.quit = false;
+        sim.save_run(st.run_won);
+        writer.write(AppExit::Success);
+    }
+}
+
+/// Closing the window saves a run in progress too.
+fn save_on_exit(mut exits: MessageReader<AppExit>, mut sim: ResMut<Sim>, st: Res<UiState>) {
+    if exits.read().next().is_some() {
+        sim.save_run(st.run_won);
     }
 }
 
@@ -911,11 +1008,28 @@ fn hover(
         st.hover = pad.cursor.filter(|&c| sim.game.in_bounds(c));
     }
 
+    let confirm = sim.save.settings.confirm_place && !pad::active();
     let g = &mut sim.game;
+    // The mark only lasts while that cell can still take a gem.
+    if st.marked.is_some_and(|c| g.phase != Phase::Build || !matches!(g.grid[g.idx(c)], Occ::Empty)) || !confirm {
+        st.marked = None;
+    }
     if mouse.just_pressed(MouseButton::Left) && !over_ui {
         match st.hover {
-            Some(c) => click_cell(g, c, &mut audio),
-            None => g.selected = None,
+            // "Click twice to place": the first click on an empty cell only marks it. The gem
+            // is rolled when it's placed, so this hides nothing and can't be used to re-roll.
+            Some(c) if confirm && g.phase == Phase::Build && matches!(g.grid[g.idx(c)], Occ::Empty) && st.marked != Some(c) && g.can_place(c).is_ok() => {
+                st.marked = Some(c);
+                audio.click();
+            }
+            Some(c) => {
+                st.marked = None;
+                click_cell(g, c, &mut audio);
+            }
+            None => {
+                st.marked = None;
+                g.selected = None;
+            }
         }
     }
     // A right click (not a drag) clears the selection.

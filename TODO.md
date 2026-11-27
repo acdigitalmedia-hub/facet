@@ -56,6 +56,15 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [ ] Install v0.1.1 once by hand on each device
 - [ ] Windows update path tested in the VM
 
+## 8. Playtest fixes (2026-11-26)
+- [x] Leviathan's regeneration only works after 2 s without damage (2%/s, was 3%/s always):
+      in endless its HP outgrew any maze's damage
+- [x] Misclicks: optional "Click twice to place" (gems are rolled on placement, so an undo
+      would leak the gem or allow re-rolls; preventing the misclick is the fair fix)
+- [x] Quit buttons: title screen, pause menu (Save & Quit to Title / Save & Quit Game)
+- [x] Saved runs: on leaving, closing the window and each round start; continue prompt at startup
+- [ ] Playtest: endless Leviathan, click twice to place, quit and continue a run
+
 ## Done
 - [x] M1–M3: core loop, recipes/specials, bosses, difficulties, endless, synth audio, records (2D)
 - [x] Maps + art pass (5 maps)

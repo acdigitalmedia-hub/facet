@@ -1,6 +1,6 @@
 //! A renderer-independent RGBA color (components 0..1).
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Color {
     pub r: f32,
     pub g: f32,

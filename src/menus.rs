@@ -21,7 +21,10 @@ pub enum Page {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Request {
     Restart,
+    /// Back to the title (saving the run).
     Quit,
+    /// Quit the game (saving the run).
+    Exit,
     Endless,
 }
 
@@ -47,7 +50,8 @@ fn big_button(ui: &mut egui::Ui, label: &str, w: f32, clicked: &mut bool) -> boo
 }
 
 /// The pause menu. Returns a request when a button asks for one.
-pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, clicked: &mut bool) -> Option<Request> {
+/// `saves`: leaving keeps the run to continue later (not for editor playtests).
+pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, saves: bool, clicked: &mut bool) -> Option<Request> {
     nav::group(ctx, Group::Modal);
     dim_behind(ctx, view, "pause_dim");
     let mut req = None;
@@ -70,8 +74,11 @@ pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, clicked: 
                 if big_button(ui, "How to Play", w, clicked) {
                     *page = Some(Page::Help);
                 }
-                if big_button(ui, "Quit to Title", w, clicked) {
+                if big_button(ui, if saves { "Save & Quit to Title" } else { "Quit to Title" }, w, clicked) {
                     req = Some(Request::Quit);
+                }
+                if big_button(ui, if saves { "Save & Quit Game" } else { "Quit Game" }, w, clicked) {
+                    req = Some(Request::Exit);
                 }
                 ui.add_space(6.0);
                 small(ui, if pad::active() { "B to resume" } else { "Esc to resume" }, DIM);
@@ -146,6 +153,11 @@ pub fn settings(ctx: &egui::Context, area: Rect, s: &mut Settings, music: &mut b
                 label(ui, "Floating gold / crits");
                 let r = ui.checkbox(&mut s.floating_text, "");
                 nav::toggle(&r, &mut s.floating_text);
+                ui.end_row();
+                label(ui, "Click twice to place");
+                let r = ui.checkbox(&mut s.confirm_place, "");
+                nav::toggle(&r, &mut s.confirm_place);
+                r.on_hover_text("The first click marks a cell, the second places the gem. Prevents misclicks (mouse only).");
                 ui.end_row();
                 label(ui, "Check for updates");
                 ui.horizontal(|ui| {
@@ -551,6 +563,50 @@ pub fn summary(ctx: &egui::Context, view: Rect, g: &Game, new_best: bool, t: f32
         });
     let _ = (GOOD, FontId::default());
     req
+}
+
+// ---------------------------------------------------------------------------------------------
+// Saved run prompt (title screen, at startup)
+
+pub enum ResumeChoice {
+    Continue,
+    NewRun,
+    Later,
+}
+
+/// "Continue your run?" Returns the player's choice once they make one.
+pub fn resume_prompt(ctx: &egui::Context, area: Rect, s: &crate::run::Summary, clicked: &mut bool) -> Option<ResumeChoice> {
+    nav::group(ctx, Group::Modal);
+    dim_behind(ctx, area, "resume_dim");
+    let mut out = None;
+    egui::Area::new("resume".into()).order(egui::Order::Foreground).pivot(Align2::CENTER_CENTER).fixed_pos(area.center()).show(ctx, |ui| {
+        frame().show(ui, |ui| {
+            ui.set_width(340.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("Continue your run?").family(heading()).size(28.0).color(GOLD));
+                ui.add_space(6.0);
+                ui.label(RichText::new(&s.title).size(17.0).color(TEXT));
+                ui.label(RichText::new(&s.detail).size(15.0).color(DIM));
+                ui.add_space(12.0);
+                let w = 280.0;
+                if big_button(ui, "Continue", w, clicked) {
+                    out = Some(ResumeChoice::Continue);
+                }
+                if big_button(ui, "Start a New Run", w, clicked) {
+                    out = Some(ResumeChoice::NewRun);
+                }
+                ui.add_space(4.0);
+                small(ui, "Starting a new run ends this one (it counts as unfinished).", DIM);
+                if big_button(ui, "Not Now", w, clicked) {
+                    out = Some(ResumeChoice::Later);
+                }
+            });
+        });
+    });
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        out = Some(ResumeChoice::Later);
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------------------------

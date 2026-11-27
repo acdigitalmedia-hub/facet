@@ -785,8 +785,8 @@
         "armor": 4,
         "size": 0.62,
         "boss": true,
-        "regen": 0.03,
-        "desc": "Boss: regenerates 3% of its max HP every second."
+        "regen": 0.02,
+        "desc": "Boss: regenerates 2% of its max HP per second, but only after 2 seconds without taking damage. Keep it under fire."
       },
       {
         "name": "Shades",
