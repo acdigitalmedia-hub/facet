@@ -329,6 +329,12 @@ pub fn no_ui() -> bool {
 }
 
 /// The starting window size: `FACET3D_SIZE=1280x800` (debug), else 1600x920.
+/// Running under gamescope (Steam Deck gaming mode, or a Steam Big Picture session)?
+fn gamescope() -> bool {
+    std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.eq_ignore_ascii_case("gamescope"))
+}
+
 fn window_size() -> (u32, u32) {
     std::env::var("FACET3D_SIZE")
         .ok()
@@ -337,6 +343,16 @@ fn window_size() -> (u32, u32) {
             Some((w.parse().ok()?, h.parse().ok()?))
         })
         .unwrap_or((1600, 920))
+}
+
+/// Prints the window's size and scale factor whenever they change (for diagnosing scaling).
+fn log_window(windows: Query<&Window, With<PrimaryWindow>>, mut last: Local<Option<(u32, u32, f32)>>) {
+    let Ok(w) = windows.single() else { return };
+    let now = (w.physical_width(), w.physical_height(), w.scale_factor());
+    if *last != Some(now) {
+        *last = Some(now);
+        eprintln!("window: {}x{} pixels, scale factor {} (override {:?})", now.0, now.1, now.2, w.resolution.scale_factor_override());
+    }
 }
 
 /// Debug: `FACET3D_SHOT=out.png` saves a screenshot of the game window after a few seconds
@@ -485,7 +501,13 @@ fn main() {
                         title: "Facet".into(),
                         // Wayland app id / X11 class: matches facet.desktop so the launcher icon shows.
                         name: Some("facet".into()),
-                        resolution: window_size().into(),
+                        resolution: {
+                            let r: bevy::window::WindowResolution = window_size().into();
+                            // Gamescope (Steam Deck gaming mode) reports the Deck's small, dense
+                            // screen, which would scale everything up about 2.25×. The game has its
+                            // own UI scale setting, so draw at one pixel per point there.
+                            if gamescope() { r.with_scale_factor_override(1.0) } else { r }
+                        },
                         ..default()
                     }),
                     ..default()
@@ -527,7 +549,7 @@ fn main() {
             (keys, pad::gamepad, apply_settings, rebuild, drive, events, sync_scene, view::animate, creatures::corpses, atmosphere::update, atmosphere::light_shift, camera, viewport, hover, view::path_dots, draw_overlays, audio::flush).chain(),
         )
         .add_systems(EguiPrimaryContextPass, ui::interface)
-        .add_systems(Last, (debug_shot, pad::pad_log, quit_request, save_on_exit).chain())
+        .add_systems(Last, (debug_shot, pad::pad_log, log_window, quit_request, save_on_exit).chain())
         .run();
 }
 
@@ -688,7 +710,8 @@ fn apply_settings(
     audio.music_gain = s.music_volume;
     audio.sfx_gain = s.sfx_volume;
     if let Ok(mut w) = windows.single_mut() {
-        let want = if s.fullscreen { WindowMode::BorderlessFullscreen(MonitorSelection::Current) } else { WindowMode::Windowed };
+        // Under gamescope the window always fills the screen, so take its real size.
+        let want = if s.fullscreen || gamescope() { WindowMode::BorderlessFullscreen(MonitorSelection::Current) } else { WindowMode::Windowed };
         if w.mode != want {
             w.mode = want;
         }
