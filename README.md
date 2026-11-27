@@ -45,7 +45,7 @@ places the gem there.
 Difficulties: Normal, Hard, Nightmare; Endless after a win; a daily challenge (same gem rolls for
 everyone that day) and run mutators on the title screen.
 
-Controls: click to place / select · `Tab`/`Shift+Tab` next / previous tower · `T` targeting · `K` keep · `C` combine · `U` quality · `X` remove rock ·
+Controls: click to place / select · `Tab`/`Shift+Tab` next / previous tower · `T` targeting · `K` keep · `C` combine · `F` forge a ready recipe · `U` quality · `X` remove rock ·
 `L` upgrade special · `B` recipe book · `1`/`2`/`3` speed · `Space` pause · `M`/`N` music/sound ·
 `WASD` or arrows pan · `Q`/`E` or right-drag rotate · scroll zoom · middle-drag pan ·
 `Home` reset view · `V` top-down view · `F11` fullscreen · `Esc` menu.

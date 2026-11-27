@@ -74,6 +74,14 @@ Check items off as they land. Newest decisions go in "Notes" at the bottom.
 - [x] Full board: a round that runs out of room goes to choosing; none placed → Start the wave
 - [x] Playtested; released v0.1.2
 
+## 12. Prompts and reminders (2026-11-27)
+- [x] Checkpoint / Start / Exit labels drawn under the interface (they showed over the tray)
+- [x] Reminder above the tray when a gem quality upgrade is affordable before placing
+- [x] Reminder above the tray when a recipe is ready, with Show me / Forge (new key: F)
+- [x] Button prompts drawn as keycaps and controller buttons (src/glyph.rs, `{K|A}` in text)
+- [x] Help lists keyboard and controller controls with the same icons
+- [ ] Playtest
+
 ## 11. Targeting, upcoming waves, Tab (2026-11-26, released v0.1.3)
 - [x] Per-tower targeting: First / Last / Strongest / Weakest (panel buttons, T, controller Y)
 - [x] Next Wave shows the 4 waves after it (boss / flying tags, details on hover)

@@ -12,6 +12,7 @@ mod env;
 mod menus;
 mod mesh;
 mod nav;
+mod glyph;
 mod pad;
 mod run;
 mod terrain;
@@ -657,6 +658,17 @@ fn keys(input: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut st: ResMut<U
     let g = &mut sim.game;
     if input.just_pressed(KeyCode::KeyU) {
         g.buy_luck();
+    }
+    // F: forge the selected tower's ready recipe; otherwise select a gem that has one, so a
+    // second press forges it there.
+    if input.just_pressed(KeyCode::KeyF)
+        && let Some((r, at)) = g.ready_forge()
+    {
+        if g.selected == Some(at) {
+            g.forge(r, at);
+        } else {
+            g.selected = Some(at);
+        }
     }
     // Tab / Shift+Tab: next / previous tower (this round's new gems while choosing).
     if input.just_pressed(KeyCode::Tab) {

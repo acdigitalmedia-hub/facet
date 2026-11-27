@@ -47,11 +47,6 @@ pub fn force_active() {
     ACTIVE.store(true, Ordering::Relaxed);
 }
 
-/// A key hint for a label: `[K]` with keyboard and mouse, `(X)` with a controller.
-pub fn hint(key: &str, pad: &str) -> String {
-    if active() { format!("({pad})") } else { format!("[{key}]") }
-}
-
 /// Repeats a held direction: once at once, then steadily after a short delay.
 #[derive(Default)]
 struct Repeat {

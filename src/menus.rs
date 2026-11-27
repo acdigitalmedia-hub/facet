@@ -1,12 +1,13 @@
 //! Menus and helpers layered over the game: pause menu, settings, how to play, first-game
 //! tips, the rock-removal confirmation, board tooltips and the end-of-run summary.
 
-use bevy_egui::egui::{self, Align2, Color32, CornerRadius, FontId, Margin, Pos2, Rect, RichText, Stroke, Vec2 as V2};
+use bevy_egui::egui::{self, Align2, Color32, CornerRadius, FontId, Margin, Pos2, Rect, RichText, Sense, Stroke, Vec2 as V2};
 use facet_core::game::{Game, Kind, Occ, Phase};
 use facet_core::save::{Quality, Settings};
 
 use crate::nav::{self, Group, NavExt};
-use crate::pad::{self, hint};
+use crate::glyph;
+use crate::pad;
 use crate::ui::{alpha, bold, c32, diff_color, effects_text, heading, lerp32, small, tower_icon, BAD, DIM, GOLD, GOOD, INFO, RECIPE, TEXT};
 
 /// Which menu page is open.
@@ -81,7 +82,8 @@ pub fn pause(ctx: &egui::Context, view: Rect, page: &mut Option<Page>, saves: bo
                     req = Some(Request::Exit);
                 }
                 ui.add_space(6.0);
-                small(ui, if pad::active() { "B to resume" } else { "Esc to resume" }, DIM);
+                let (r, _) = ui.allocate_exact_size(V2::new(260.0, 20.0), Sense::hover());
+                glyph::line(ui.painter(), r.center(), Align2::CENTER_CENTER, "{Esc|B} to resume", FontId::proportional(13.5), DIM);
             });
         });
     });
@@ -218,15 +220,15 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Keeping a gem",
-        "After placing 5 gems, pick ONE to keep: click it on the board or in the tray at the bottom of the screen, then Keep (K). The other four turn into rocks: still walls, but they don't attack. Rocks can be removed for gold between waves. If the board ever runs out of room, you choose from the gems you managed to place (or skip the round when none fit).",
+        "After placing 5 gems, pick ONE to keep: click it on the board or in the tray at the bottom of the screen, then Keep {K|X}. The other four turn into rocks: still walls, but they don't attack. Rocks can be removed for gold between waves. If the board ever runs out of room, you choose from the gems you managed to place (or skip the round when none fit).",
     ),
     (
         "Combining",
-        "If two of the new gems match (same type and quality), Combine (C) keeps one of them a quality higher. Four of a kind jumps two qualities. Qualities, worst to best: Rough, Cut, Faceted, Brilliant, Radiant. The diamonds under a gem show its quality: one filled for Rough up to all five for Radiant.",
+        "If two of the new gems match (same type and quality), Combine {C|Y} keeps one of them a quality higher. Four of a kind jumps two qualities. Qualities, worst to best: Rough, Cut, Faceted, Brilliant, Radiant. The diamonds under a gem show its quality: one filled for Rough up to all five for Radiant.",
     ),
     (
         "Special towers",
-        "Some gem combinations form recipes for powerful special towers. When you own all the ingredients, they get a pink ring: click one and press Forge. Open the Recipe Book (B) to plan ahead. Specials can be upgraded with gold.",
+        "Some gem combinations form recipes for powerful special towers. When you own all the ingredients, they get a pink ring: select one and press Forge {F|Y}. Open the Recipe Book {B|Select} to plan ahead. Specials can be upgraded with gold.",
     ),
     (
         "Special enemies",
@@ -242,7 +244,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "Targeting",
-        "Select a tower to choose which enemy in range it shoots: First (furthest along, the default), Last, Strongest (most HP left: good against bosses and tough enemies) or Weakest (finishes kills, thins out swarms). T cycles it, or Y on a controller.",
+        "Select a tower to choose which enemy in range it shoots: First (furthest along, the default), Last, Strongest (most HP left: good against bosses and tough enemies) or Weakest (finishes kills, thins out swarms). {T|Y} cycles it.",
     ),
     (
         "Gold",
@@ -256,14 +258,38 @@ const HELP: &[(&str, &str)] = &[
         "Gems",
         "Ruby: splash damage (ground only). Sapphire: slows. Emerald: poison. Topaz: chain lightning. Amethyst: long range, ignores armor, strong vs flyers, reveals invisible enemies. Diamond: high damage with critical hits.",
     ),
-    (
-        "Controls",
-        "Click to place or select. Tab / Shift+Tab next / previous tower (the new gems while choosing). K keep, C combine, T targeting, U gem quality, X remove rock, L upgrade special, B recipe book. 1/2/3 game speed, Space pause, Esc menu. Camera: WASD/arrows pan, Q/E or right-drag rotate, scroll zoom, middle-drag pan, Home reset view, V top-down. M/N music/sound, F11 fullscreen.",
-    ),
-    (
-        "Controller",
-        "Left stick moves the cursor. A places or selects, B deselects (or dismisses a tip). X keeps a new gem, removes a selected rock or upgrades a selected special. Y forges when a recipe is ready, otherwise combines (or changes a selected tower's targeting). LB/RB jump between towers (the new gems while choosing). D-pad: up gem quality, down top-down view, left/right game speed. Right stick turns the camera, LT/RT zoom, L3 resets the view, R3 pauses. Start opens the menu, Select the recipe book. In menus, move with the stick or D-pad, A to choose, B to go back.",
-    ),
+];
+
+/// Keyboard and mouse controls: (keys, what they do).
+const KEYS: &[(&str, &str)] = &[
+    ("Click", "place a gem, or select a tower or rock"),
+    ("{k:Tab}  {k:Shift}+{k:Tab}", "next / previous tower (the new gems while choosing)"),
+    ("{k:K}  {k:C}", "keep / combine the selected new gem"),
+    ("{k:F}", "forge a ready recipe (selects its gem first)"),
+    ("{k:T}", "change the selected tower's targeting"),
+    ("{k:U}", "upgrade gem quality"),
+    ("{k:X}  {k:L}", "remove the selected rock / upgrade the selected special"),
+    ("{k:B}", "recipe book"),
+    ("{k:1}{k:2}{k:3}  {k:Space}", "game speed / pause"),
+    ("{k:Esc}", "deselect, back, menu"),
+    ("{k:WASD}  {k:Q}{k:E}", "pan / rotate the camera (or middle- / right-drag)"),
+    ("Scroll", "zoom"),
+    ("{k:Home}  {k:V}", "reset view / top-down"),
+    ("{k:M}  {k:N}  {k:F11}", "music / sound / fullscreen"),
+];
+
+/// Controller controls.
+const PAD: &[(&str, &str)] = &[
+    ("{p:LS}", "move the cursor"),
+    ("{p:A}  {p:B}", "place or select / deselect, dismiss a tip"),
+    ("{p:X}", "keep a new gem, remove a selected rock, upgrade a selected special"),
+    ("{p:Y}", "forge a ready recipe, otherwise combine (or change targeting)"),
+    ("{p:LB}  {p:RB}", "previous / next tower (the new gems while choosing)"),
+    ("{p:Up}  {p:Down}", "gem quality / top-down view"),
+    ("{p:LeftRight}", "game speed"),
+    ("{p:RS}  {p:LT}{p:RT}", "turn / zoom the camera"),
+    ("{p:L3}  {p:R3}", "reset view / pause"),
+    ("{p:Start}  {p:Select}", "menu / recipe book"),
 ];
 
 /// The how-to-play page. Returns true when closed.
@@ -281,7 +307,18 @@ pub fn help(ctx: &egui::Context, area: Rect, clicked: &mut bool) -> bool {
                 for (title, body) in HELP {
                     ui.add_space(6.0);
                     ui.label(RichText::new(*title).family(heading()).size(18.0).color(lerp32(GOLD, TEXT, 0.3)));
-                    ui.label(RichText::new(*body).size(15.0).color(TEXT));
+                    glyph::rich(ui, body, 15.0, TEXT);
+                }
+                for (title, rows) in [("Keyboard and mouse", KEYS), ("Controller", PAD)] {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(title).family(heading()).size(18.0).color(lerp32(GOLD, TEXT, 0.3)));
+                    for (keys, what) in rows {
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui.allocate_exact_size(V2::new(170.0, 24.0), Sense::hover());
+                            glyph::line(ui.painter(), r.left_center(), Align2::LEFT_CENTER, keys, FontId::proportional(15.0), TEXT);
+                            ui.label(RichText::new(*what).size(15.0).color(TEXT));
+                        });
+                    }
                 }
             });
             ui.add_space(12.0);
@@ -313,13 +350,11 @@ pub fn confirm_rock(ctx: &egui::Context, view: Rect, cost: u32, can: bool, click
                     }
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        let yes = egui::Button::new(RichText::new(format!("Remove  {}", hint("Enter", "A"))).size(15.0)).min_size(V2::new(140.0, 30.0));
-                        if ui.add_enabled(can, yes).nav_clicked() {
+                        if glyph::button(ui, "Remove  {Enter|A}", 15.0, V2::new(140.0, 30.0), can, None, None, None).nav_clicked() {
                             out = Some(true);
                             *clicked = true;
                         }
-                        let no = egui::Button::new(RichText::new(format!("Cancel  {}", hint("Esc", "B"))).size(15.0)).min_size(V2::new(140.0, 30.0));
-                        if ui.add(no).nav_clicked() {
+                        if glyph::button(ui, "Cancel  {Esc|B}", 15.0, V2::new(140.0, 30.0), true, None, None, None).nav_clicked() {
                             out = Some(false);
                             *clicked = true;
                         }
@@ -347,22 +382,22 @@ const TIPS: &[Tip] = &[
     },
     Tip {
         id: "choose",
-        text: "Now keep ONE of the new gems: click it, then Keep (K). The others turn into rocks. If two new gems match, Combine (C) upgrades one instead.",
+        text: "Now keep ONE of the new gems: select it, then Keep {K|X}. The others turn into rocks. If two new gems match, Combine {C|Y} upgrades one instead.",
         when: |g| g.phase == Phase::Choose,
     },
     Tip {
         id: "wave",
-        text: "Enemies walk from Start through each numbered checkpoint to the Exit. Each one that escapes costs a life. Press 2 or 3 to speed the game up.",
+        text: "Enemies walk from Start through each numbered checkpoint to the Exit. Each one that escapes costs a life. Speed the game up with {2|Right}.",
         when: |g| g.phase == Phase::Wave && g.wave == 0,
     },
     Tip {
         id: "recipe",
-        text: "A recipe is ready! Pink-ringed gems can be forged into a special tower: click one and press Forge. The Recipe Book (B) lists them all.",
+        text: "A recipe is ready! Pink-ringed gems can be forged into a special tower: select one and press Forge {F|Y}. The Recipe Book {B|Select} lists them all.",
         when: |g| matches!(g.phase, Phase::Build | Phase::Choose) && !g.available_recipes().is_empty(),
     },
     Tip {
         id: "quality",
-        text: "You have gold to spare. Upgrading Gem Quality (U) improves the odds of rolling higher-quality gems.",
+        text: "You have gold to spare. Upgrading Gem Quality {U|Up} improves the odds of rolling higher-quality gems.",
         when: |g| g.phase == Phase::Build && g.wave >= 1 && g.luck_cost().is_some_and(|c| g.gold >= c),
     },
     Tip {
@@ -382,7 +417,7 @@ const TIPS: &[Tip] = &[
     },
     Tip {
         id: "rocks",
-        text: "Rocks can be removed between waves: click one, then Remove (X). Handy for fixing a maze or making room.",
+        text: "Rocks can be removed between waves: select one, then Remove {X|X}. Handy for fixing a maze or making room.",
         when: |g| g.phase == Phase::Build && g.wave >= 3 && g.grid.iter().any(|o| matches!(o, Occ::Rock)),
     },
 ];
@@ -409,11 +444,10 @@ pub fn tips(ctx: &egui::Context, view: Rect, g: &Game, s: &mut Settings, dismiss
             .show(ui, |ui| {
                 ui.set_width(330.0);
                 ui.label(RichText::new("Tip").family(heading()).size(17.0).color(INFO));
-                ui.label(RichText::new(tip.text).size(14.5).color(TEXT));
+                glyph::rich(ui, tip.text, 14.5, TEXT);
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let got = if pad::active() { "Got it  (B)" } else { "Got it" };
-                    if ui.button(RichText::new(got).size(14.0)).nav_clicked() {
+                    if glyph::button(ui, "Got it {|B}", 14.0, V2::new(80.0, 26.0), true, None, None, None).nav_clicked() {
                         s.seen_tips.push(tip.id.to_string());
                         changed = true;
                         *clicked = true;

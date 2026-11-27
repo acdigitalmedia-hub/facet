@@ -17,7 +17,8 @@ use facet_core::path::{full_route, Cell};
 use crate::audio::Audio;
 use crate::menus::{self, Page, Request};
 use crate::nav::{self, Group, NavExt};
-use crate::pad::{self, hint, Pad};
+use crate::glyph;
+use crate::pad::{self, Pad};
 use crate::{Screen, Sim};
 
 pub const PANEL_W: f32 = 350.0;
@@ -101,6 +102,8 @@ pub struct UiState {
     pub marked: Option<Cell>,
     /// A gem in the bottom tray under the pointer (highlighted on the board).
     pub tray_hover: Option<usize>,
+    /// Top of the tray and the reminders above it, while they show (messages go above).
+    pub tray_top: Option<f32>,
     /// The wave whose start was last autosaved.
     pub autosaved: Option<u32>,
     /// Cached path preview for the hovered cell: (cell, board rev, route or None if blocking).
@@ -133,6 +136,7 @@ impl Default for UiState {
             hover: None,
             marked: None,
             tray_hover: None,
+            tray_top: None,
             autosaved: None,
             preview: None,
             run_won: false,
@@ -289,9 +293,8 @@ pub(crate) fn tower_icon(ui: &mut egui::Ui, g: &Game, t: &Tower, size: f32) {
 
 /// A panel button with a hover explanation (shown even when it's disabled).
 fn button_tip(ui: &mut egui::Ui, label: &str, enabled: bool, tint: Color32, clicked: &mut bool, tip: &str) -> bool {
-    let text = RichText::new(label).size(15.0).color(if enabled { TEXT } else { DIM });
-    let b = egui::Button::new(text).min_size(V2::new(ui.available_width(), 30.0)).stroke(Stroke::new(1.2, alpha(tint, if enabled { 0.85 } else { 0.25 })));
-    let mut resp = ui.add_enabled(enabled, b);
+    let stroke = Stroke::new(1.2, alpha(tint, if enabled { 0.85 } else { 0.25 }));
+    let mut resp = glyph::button(ui, label, 15.0, V2::new(ui.available_width(), 30.0), enabled, Some(stroke), None, None);
     if !tip.is_empty() {
         resp = resp.on_hover_text(tip).on_disabled_hover_text(tip);
     }
@@ -558,9 +561,10 @@ pub fn interface(
             hud(ctx, &sim, &mut st, view, &mut clicked);
             let ended = matches!(sim.game.phase, Phase::GameOver | Phase::Victory);
             if !ended && st.page.is_none() && !st.book {
-                tray(ctx, &mut sim.game, &mut st, view, &mut clicked);
+                tray(ctx, &mut sim.game, &mut st, view, t, &mut clicked);
             } else {
                 st.tray_hover = None;
+                st.tray_top = None;
             }
             if st.book {
                 book(ctx, &sim.game, view, t, &mut st.book, &mut clicked);
@@ -726,7 +730,8 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
         let m = &sim.maps[sim.map];
         p.text(Pos2::new(cx, my + card_h + pick(22.0, 18.0)), Align2::CENTER_CENTER, &m.desc, FontId::proportional(16.0), TEXT);
         if !compact {
-            p.text(Pos2::new(cx, my + card_h + 44.0), Align2::CENTER_CENTER, if pad::active() { "LB / RB to change the map, then choose a difficulty" } else { "Click a map or use the Left/Right keys to choose" }, FontId::proportional(13.0), DIM);
+            let t = if pad::active() { "{p:LB} {p:RB} to change the map, then choose a difficulty" } else { "Click a map or use {k:←} {k:→} to choose" };
+            glyph::line(&p, Pos2::new(cx, my + card_h + 44.0), Align2::CENTER_CENTER, t, FontId::proportional(13.0), DIM);
         }
 
         // Difficulty cards.
@@ -775,7 +780,7 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
             p.rect_stroke(r, CornerRadius::same(4), Stroke::new(if hov { 2.2 } else { 1.2 }, alpha(tint, if hov { 1.0 } else { 0.5 })), StrokeKind::Inside);
             p.text(r.min + V2::new(14.0, 14.0), Align2::LEFT_TOP, &d.name, FontId::new(22.0, heading()), tint);
             if !pad::active() {
-                p.text(Pos2::new(r.max.x - 14.0, r.min.y + 18.0), Align2::RIGHT_TOP, format!("[{}]", k + 1), FontId::proportional(14.0), DIM);
+                glyph::line(&p, Pos2::new(r.max.x - 14.0, r.min.y + 26.0), Align2::RIGHT_CENTER, &format!("{{k:{}}}", k + 1), FontId::proportional(14.0), DIM);
             }
             let galley = ctx.fonts_mut(|f| f.layout(d.desc.clone(), FontId::proportional(14.0), TEXT, dw - 28.0));
             let gh = galley.size().y;
@@ -861,13 +866,14 @@ fn title(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, audio: &mut Audio
             }
         }
         let onoff = |b: bool| if b { "on" } else { "off" };
-        p.text(
+        glyph::line(
+            &p,
             Pos2::new(cx, screen.max.y - pick(40.0, 18.0)),
             Align2::CENTER_CENTER,
-            if pad::active() {
-                "LB / RB map  ·  Stick or D-pad to move  ·  A to choose  ·  B back".to_string()
+            &if pad::active() {
+                "{p:LB} {p:RB} map     {p:LS} move     {p:A} choose     {p:B} back".to_string()
             } else {
-                format!("[M] Music: {}      [N] Sound: {}", onoff(audio.music_on), onoff(audio.sfx_on))
+                format!("{{k:M}} Music: {}        {{k:N}} Sound: {}", onoff(audio.music_on), onoff(audio.sfx_on))
             },
             FontId::proportional(14.0),
             DIM,
@@ -928,8 +934,8 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 Some(sel) => selected(ui, g, sel, &mut st.confirm_rock, clicked),
                 None => {
                     section(ui, "Selected");
-                    let t = if pad::active() { "Move the cursor onto a tower or rock and press A to see it here." } else { "Click a tower or rock on the board to see it here." };
-                    small(ui, t, DIM);
+                    let t = if pad::active() { "Move the cursor onto a tower or rock and press {p:A} to see it here." } else { "Click a tower or rock on the board to see it here." };
+                    glyph::rich(ui, t, 13.5, DIM);
                 }
             }
 
@@ -939,8 +945,8 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
             if !ready.is_empty() || !close.is_empty() {
                 section(ui, "Recipes");
                 for r in &ready {
-                    let how = if pad::active() { "select a pink-ringed gem, then Y" } else { "click a pink-ringed gem" };
-                    small(ui, format!("Ready: {} ({how})", g.bal.specials[*r].name), RECIPE);
+                    let how = if pad::active() { "select a pink-ringed gem, then {p:Y}" } else { "press {k:F} or click a pink-ringed gem" };
+                    glyph::rich(ui, &format!("Ready: {} · {how}", g.bal.specials[*r].name), 13.5, RECIPE);
                 }
                 for (r, missing) in close {
                     small(ui, format!("Close: {} (need {})", g.bal.specials[r].name, g.ing_name(missing)), alpha(RECIPE, 0.75));
@@ -970,7 +976,7 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
                 }
             }
             let label = match g.luck_cost() {
-                Some(c) => format!("Upgrade quality ({c} gold)  {}", hint("U", "D-pad ↑")),
+                Some(c) => format!("Upgrade quality ({c} gold)  {{U|Up}}"),
                 None => "Quality maxed".into(),
             };
             let can = g.luck_cost().is_some_and(|c| g.gold >= c) && !matches!(g.phase, Phase::GameOver | Phase::Victory);
@@ -1037,28 +1043,25 @@ fn panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, _audio: &mut Audi
         .show(ctx, |ui| {
             let inner = PANEL_W - 36.0;
             ui.set_width(inner);
-            let book_label = format!("{}  {}", if st.book { "Close Recipe Book" } else { "Recipe Book" }, hint("B", "Select"));
+            let book_label = format!("{}  {{B|Select}}", if st.book { "Close Recipe Book" } else { "Recipe Book" });
             if button_tip(ui, &book_label, true, RECIPE, clicked, "Every special tower and its ingredients.") {
                 st.book = !st.book;
             }
             ui.horizontal(|ui| {
                 let bw = (inner - 6.0) / 2.0;
                 for (label, top, tip) in [
-                    (format!("Reset view  {}", hint("Home", "L3")), false, "Back to the default angled view of the whole board."),
-                    (format!("Top-down  {}", hint("V", "D-pad ↓")), true, "Look straight down at the board."),
+                    ("Reset view  {Home|L3}", false, "Back to the default angled view of the whole board."),
+                    ("Top-down  {V|Down}", true, "Look straight down at the board."),
                 ] {
-                    let b = egui::Button::new(RichText::new(label).size(14.0)).min_size(V2::new(bw, 28.0));
-                    if ui.add(b).on_hover_text(tip).nav_clicked() {
+                    if glyph::button(ui, label, 14.0, V2::new(bw, 28.0), true, None, None, None).on_hover_text(tip).nav_clicked() {
                         st.cam_request = Some(top);
                         *clicked = true;
                     }
                 }
             });
-            if pad::active() {
-                small(ui, "Right stick camera · LT/RT zoom · Start menu", DIM);
-            } else {
-                small(ui, "WASD pan · Q/E rotate · scroll zoom · Esc menu", DIM);
-            }
+            let line = if pad::active() { "{p:RS} camera   {p:LT}{p:RT} zoom   {p:Start} menu" } else { "{k:WASD} pan   {k:Q}{k:E} rotate   {k:Esc} menu" };
+            let (r, _) = ui.allocate_exact_size(V2::new(inner, 20.0), Sense::hover());
+            glyph::line(ui.painter(), r.left_center(), Align2::LEFT_CENTER, line, FontId::proportional(13.5), DIM);
         });
 }
 
@@ -1112,7 +1115,8 @@ fn hud(ctx: &egui::Context, sim: &Sim, st: &mut UiState, view: Rect, clicked: &m
                     let b = egui::Button::new(RichText::new(label).size(15.0).color(if on { GOLD } else { TEXT }))
                         .min_size(V2::new(40.0, 28.0))
                         .fill(if on { Color32::from_rgb(70, 58, 36) } else { STONE });
-                    if ui.add(b).on_hover_text(format!("Game speed {label}  {}", hint(&sp.min(3).to_string(), "D-pad ←/→"))).nav_clicked() {
+                    let tip = format!("Game speed {label}  {{{}|LeftRight}}", sp.min(3));
+                    if ui.add(b).on_hover_ui(|ui| glyph::rich(ui, &tip, 14.0, TEXT)).nav_clicked() {
                         st.speed = sp;
                         st.paused = false;
                         *clicked = true;
@@ -1121,7 +1125,7 @@ fn hud(ctx: &egui::Context, sim: &Sim, st: &mut UiState, view: Rect, clicked: &m
                 let b = egui::Button::new(RichText::new(if st.paused { "Play" } else { "Pause" }).size(15.0).color(if st.paused { GOLD } else { TEXT }))
                     .min_size(V2::new(58.0, 28.0))
                     .fill(if st.paused { Color32::from_rgb(70, 58, 36) } else { STONE });
-                if ui.add(b).on_hover_text(format!("Pause  {}", hint("Space", "R3"))).nav_clicked() {
+                if ui.add(b).on_hover_ui(|ui| glyph::rich(ui, "Pause  {Space|R3}", 14.0, TEXT)).nav_clicked() {
                     st.paused = !st.paused;
                     *clicked = true;
                 }
@@ -1132,8 +1136,9 @@ fn hud(ctx: &egui::Context, sim: &Sim, st: &mut UiState, view: Rect, clicked: &m
 
 /// Bottom of the board view while placing and choosing: what to do, this round's gems
 /// (click one to select it) and the keep / combine buttons.
-fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked: &mut bool) {
+fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, t: f32, clicked: &mut bool) {
     st.tray_hover = None;
+    st.tray_top = None;
     if !matches!(g.phase, Phase::Build | Phase::Choose) {
         return;
     }
@@ -1144,22 +1149,18 @@ fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked
         .inner_margin(Margin::symmetric(14, 9))
         .stroke(Stroke::new(1.0, alpha(GOLD, 0.4)))
         .corner_radius(CornerRadius::same(5));
-    egui::Area::new("tray".into()).pivot(Align2::CENTER_BOTTOM).fixed_pos(Pos2::new(view.center().x, view.max.y - 12.0)).show(ctx, |ui| {
+    let tray = egui::Area::new("tray".into()).pivot(Align2::CENTER_BOTTOM).fixed_pos(Pos2::new(view.center().x, view.max.y - 12.0)).show(ctx, |ui| {
         card.show(ui, |ui| {
             // What to do now.
             let hint_text = match g.phase {
                 Phase::Build if g.no_room && g.placed.is_empty() => "No room for new gems. Remove rocks to make space, or start the wave.".to_string(),
                 Phase::Build if st.marked.is_some() && !padded => "Click the marked cell again to place the gem there.".to_string(),
                 Phase::Build => format!("Place {} more gem{}. Each gem is also a wall: shape the maze!", g.bal.gems_per_round - g.placed.len(), if g.bal.gems_per_round - g.placed.len() == 1 { "" } else { "s" }),
-                _ if padded => "Pick a gem (cursor or LB/RB), then X to keep it. The others turn to rock.".to_string(),
-                _ => "Pick a gem (here, on the board, or Tab), then keep it. The others turn to rock.".to_string(),
+                _ if padded => "Pick a gem ({p:LB} {p:RB} or the cursor), then {p:X} to keep it. The others turn to rock.".to_string(),
+                _ => "Pick a gem (here, on the board, or {k:Tab}), then keep it. The others turn to rock.".to_string(),
             };
             let hint_col = if st.marked.is_some() && g.phase == Phase::Build { GOLD } else { TEXT };
-            ui.label(RichText::new(hint_text).size(14.5).color(hint_col));
-            if g.phase == Phase::Choose && !g.available_recipes().is_empty() {
-                let t = if padded { "A recipe is ready: select a pink-ringed gem and press Y to forge it." } else { "A recipe is ready: select a pink-ringed gem to forge it." };
-                ui.label(RichText::new(t).size(13.5).color(RECIPE));
-            }
+            glyph::rich(ui, &hint_text, 14.5, hint_col);
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -1205,14 +1206,14 @@ fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked
                         ui.set_width(190.0);
                         ui.spacing_mut().item_spacing.y = 4.0;
                         let sel_fresh = g.selected.filter(|&i| g.tower(i).is_some_and(|t| t.fresh));
-                        if button_tip(ui, &format!("Keep  {}", hint("K", "X")), sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
+                        if button_tip(ui, "Keep  {K|X}", sel_fresh.is_some(), GOLD, clicked, "Keep the selected new gem. The other new gems turn into rocks.") {
                             g.keep(false);
                         }
                         let steps = sel_fresh.map_or(0, |i| g.combine_steps(i));
                         let label = match sel_fresh {
                             Some(i) if steps > 0 => {
                                 let tw = g.tower(i).unwrap();
-                                format!("{} → {}  {}", if steps == 2 { "Four of a kind" } else { "Combine" }, g.bal.tier_names[tw.rank + steps], hint("C", "Y"))
+                                format!("{} → {}  {{C|Y}}", if steps == 2 { "Four of a kind" } else { "Combine" }, g.bal.tier_names[tw.rank + steps])
                             }
                             _ => "Combine (needs a pair)".into(),
                         };
@@ -1232,13 +1233,92 @@ fn tray(ctx: &egui::Context, g: &mut Game, st: &mut UiState, view: Rect, clicked
             });
         });
     });
+    let top = callouts(ctx, g, view, tray.response.rect.min.y - 8.0, t, clicked);
+    st.tray_top = Some(top);
+}
+
+/// Reminders above the tray for things that are easy to miss: a gem quality upgrade you can
+/// afford before placing this round's gems, and recipes ready to forge. Returns their top.
+fn callouts(ctx: &egui::Context, g: &mut Game, view: Rect, bottom: f32, t: f32, clicked: &mut bool) -> f32 {
+    let upgrade = match g.luck_cost() {
+        Some(c) if g.phase == Phase::Build && g.placed.is_empty() && g.gold >= c && !g.no_room => Some(c),
+        _ => None,
+    };
+    let ready = g.available_recipes();
+    if upgrade.is_none() && ready.is_empty() {
+        return bottom + 8.0;
+    }
+    let pulse = 0.5 + 0.5 * (t * 4.0).sin();
+    let card = |col: Color32| {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(14, 12, 10, 235))
+            .inner_margin(Margin::symmetric(12, 7))
+            .stroke(Stroke::new(1.5 + pulse, alpha(col, 0.55 + 0.45 * pulse)))
+            .corner_radius(CornerRadius::same(5))
+    };
+    let area = egui::Area::new("callouts".into()).pivot(Align2::CENTER_BOTTOM).fixed_pos(Pos2::new(view.center().x, bottom)).show(ctx, |ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        if !ready.is_empty() {
+            card(RECIPE).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_min_width(300.0);
+                        let mut names: Vec<&str> = ready.iter().map(|(r, _)| g.bal.specials[*r].name.as_str()).collect();
+                        names.dedup();
+                        let more = names.len().saturating_sub(2);
+                        names.truncate(2);
+                        let mut title = format!("Recipe ready: {}", names.join(", "));
+                        if more > 0 {
+                            title.push_str(&format!(" +{more} more"));
+                        }
+                        ui.label(RichText::new(title).family(bold()).size(15.5).color(RECIPE));
+                        let how = if pad::active() { "Select a pink-ringed gem, then {p:Y} to forge it." } else { "Forge the pink-ringed gems into a special tower." };
+                        glyph::rich(ui, how, 13.0, TEXT);
+                    });
+                    if !pad::active()
+                        && let Some((r, at)) = g.ready_forge()
+                    {
+                        ui.add_space(8.0);
+                        let here = g.selected == Some(at);
+                        let label = if here { format!("Forge {}  {{F|}}", g.bal.specials[r].name) } else { "Show me  {F|}".to_string() };
+                        let stroke = Stroke::new(1.5, alpha(RECIPE, 0.9));
+                        if glyph::button(ui, &label, 14.5, V2::new(150.0, 30.0), true, Some(stroke), None, None).nav_clicked() {
+                            if here {
+                                g.forge(r, at);
+                            } else {
+                                g.selected = Some(at);
+                            }
+                            *clicked = true;
+                        }
+                    }
+                });
+            });
+        }
+        if let Some(cost) = upgrade {
+            card(GOLD).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("You can upgrade gem quality").family(bold()).size(15.5).color(GOLD));
+                        ui.label(RichText::new("Do it before placing: this round's gems get the better odds.").size(13.0).color(TEXT));
+                    });
+                    ui.add_space(8.0);
+                    let stroke = Stroke::new(1.5, alpha(GOLD, 0.9));
+                    if glyph::button(ui, &format!("Upgrade ({cost} gold)  {{U|Up}}"), 14.5, V2::new(190.0, 30.0), true, Some(stroke), None, None).nav_clicked() {
+                        g.buy_luck();
+                        *clicked = true;
+                    }
+                });
+            });
+        }
+    });
+    area.response.rect.min.y
 }
 
 fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<usize>, clicked: &mut bool) {
     if g.is_rock(sel) {
         section(ui, "Rock");
         small(ui, "Rocks are walls. Remove one to reshape your maze (between waves only).", DIM);
-        let label = format!("Remove rock ({} gold)  {}", g.bal.rock_removal_cost, hint("X", "X"));
+        let label = format!("Remove rock ({} gold)  {{X|X}}", g.bal.rock_removal_cost);
         if button_tip(ui, &label, g.can_remove_rock(sel), GOLD, clicked, "Rocks can only be removed between waves.") {
             *confirm = Some(sel);
         }
@@ -1271,7 +1351,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
         // Targeting.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            ui.label(RichText::new("Target").size(13.5).color(DIM)).on_hover_text(format!("Which enemy in range this tower shoots at.  {}", hint("T", "Y")));
+            ui.label(RichText::new("Target").size(13.5).color(DIM)).on_hover_ui(|ui| glyph::rich(ui, "Which enemy in range this tower shoots at.  {T|Y}", 14.0, TEXT));
             for m in Target::ALL {
                 let on = tw.target == m;
                 let b = egui::Button::new(RichText::new(m.name()).size(13.0).color(if on { GOLD } else { TEXT }))
@@ -1287,7 +1367,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     if let Kind::Special(_) = tw.kind {
         match g.special_upgrade_cost(sel) {
             Some(cost) => {
-                let label = format!("Upgrade to Lv {} ({cost} gold)  {}", tw.rank + 2, hint("L", "X"));
+                let label = format!("Upgrade to Lv {} ({cost} gold)  {{L|X}}", tw.rank + 2);
                 let can = g.gold >= cost && !matches!(g.phase, Phase::GameOver | Phase::Victory);
                 if button_tip(ui, &label, can, GOLD, clicked, "Each level multiplies the special's damage.") {
                     g.upgrade_special(sel);
@@ -1301,8 +1381,7 @@ fn selected(ui: &mut egui::Ui, g: &mut Game, sel: usize, confirm: &mut Option<us
     for (r, ings) in g.recipes_for(sel) {
         let name = g.bal.specials[r].name.clone();
         let label = match ings {
-            Some(_) if pad::active() => format!("Forge {name}!  (Y)"),
-            Some(_) => format!("Forge {name}!"),
+            Some(_) => format!("Forge {name}!  {{F|Y}}"),
             None => format!("Part of: {name}"),
         };
         let tip = if ings.is_some() { "Combine the ingredients into this special tower here." } else { "You don't own all the ingredients yet. See the Recipe Book (B)." };
@@ -1329,7 +1408,7 @@ fn book(ctx: &egui::Context, g: &Game, view: Rect, _t: f32, open: &mut bool, cli
                     ui.add_space(16.0);
                     ui.label(RichText::new("Ingredients you own are green. Forge between waves.").size(14.0).color(DIM));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new(format!("Close  {}", hint("B", "B"))).size(14.0)).nav_clicked() {
+                        if glyph::button(ui, "Close  {B|B}", 14.0, V2::new(110.0, 28.0), true, None, None, None).nav_clicked() {
                             *open = false;
                             *clicked = true;
                         }
@@ -1384,7 +1463,8 @@ fn overlay(
     show_bars: bool,
     show_floats: bool,
 ) {
-    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, "overlay".into()));
+    // Background order: under every window, panel and tray, but still over the 3D view.
+    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, "overlay".into()));
     let cx = view.center().x;
     let zoom = ctx.zoom_factor();
     let to_screen = |x: f32, y: f32, z: f32| cam.world_to_viewport(ct, bevy::math::Vec3::new(x, y, z)).ok().map(|v| Pos2::new(v.x, v.y) / zoom);
@@ -1496,8 +1576,8 @@ fn overlay(
         let a = mt.min(1.0);
         let font = FontId::new(17.0, bold());
         let width = ctx.fonts_mut(|f| f.layout_no_wrap(msg.clone(), font.clone(), TEXT).size().x);
-        // Above the gem tray while it's showing.
-        let y = view.max.y - if matches!(g.phase, Phase::Build | Phase::Choose) { 150.0 } else { 60.0 };
+        // Above the gem tray (and its reminders) while it's showing.
+        let y = st.tray_top.map_or(view.max.y - 60.0, |top| top - 26.0);
         p.rect_filled(Rect::from_center_size(Pos2::new(cx, y), V2::new(width + 32.0, 34.0)), CornerRadius::same(3), alpha(Color32::BLACK, 0.7 * a));
         p.text(Pos2::new(cx, y), Align2::CENTER_CENTER, msg, font, alpha(TEXT, a));
     }

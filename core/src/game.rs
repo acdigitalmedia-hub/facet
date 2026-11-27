@@ -881,6 +881,17 @@ impl Game {
 
     /// Forge recipe `r` at the selected cell. If any fresh gem is used, this counts as the
     /// round's keep: leftover fresh gems turn to rock and the wave starts.
+    /// A recipe that can be forged right now and the tower to forge it at: the selected
+    /// tower's if it has one, else the first ready recipe's.
+    pub fn ready_forge(&self) -> Option<(usize, usize)> {
+        if let Some(sel) = self.selected
+            && let Some((r, _)) = self.recipes_for(sel).into_iter().find(|(_, ings)| ings.is_some())
+        {
+            return Some((r, sel));
+        }
+        self.available_recipes().into_iter().next().map(|(r, ings)| (r, ings[0]))
+    }
+
     pub fn forge(&mut self, r: usize, sel: usize) {
         let Some(ings) = self.recipe_ingredients(r, sel) else { return };
         let used_fresh = ings.iter().any(|&i| self.tower(i).is_some_and(|t| t.fresh));
